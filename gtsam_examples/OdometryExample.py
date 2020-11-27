@@ -3,7 +3,9 @@ GTSAM Copyright 2010-2018, Georgia Tech Research Corporation,
 Atlanta, Georgia 30332-0415
 All Rights Reserved
 Authors: Frank Dellaert, et al. (see THANKS for the full author list)
+
 See LICENSE for the license information
+
 Simple robot motion example, with prior and two odometry measurements
 Author: Frank Dellaert
 """
@@ -62,4 +64,6 @@ for i in range(1, 4):
     gtsam_plot.plot_pose2(0, result.atPose2(i), 0.5, marginals.marginalCovariance(i))
 plt.axis('equal')
 plt.show()
+
+
 
