@@ -29,18 +29,19 @@ if __name__ == '__main__':
     delta_t = np.diff(time)
 
     # Velocity
-    measured_vel = np.array([[data.oxts[k][0][8], data.oxts[k][0][9], data.oxts[k][0][10]] for k in range(n_frames)])
+    measured_vel = np.array([[data.oxts[k][0].vf, data.oxts[k][0].vl, data.oxts[k][0].vu] for k in range(n_frames)])
 
     # Acceleration
-#   measured_acc_2 = np.array([[data.oxts[k][0][14], data.oxts[k][0][15], data.oxts[k][0][16]] for k in range(n_frames)])
-    measured_acc = np.array([[data.oxts[k][0][11], data.oxts[k][0][12], data.oxts[k][0][13]] for k in range(n_frames)])
+#   measured_acc = np.array([[data.oxts[k][0].ax, data.oxts[k][0].ay, data.oxts[k][0].az] for k in range(n_frames)])
+    measured_acc = np.array([[data.oxts[k][0].af, data.oxts[k][0].al, data.oxts[k][0].au] for k in range(n_frames)])
 
     # Angular velocity
-#   measured_omega_2 = np.array([[data.oxts[k][0][20], data.oxts[k][0][21], data.oxts[k][0][22]] for k in range(n_frames)])
-    measured_omega = np.array([[data.oxts[k][0][17], data.oxts[k][0][18], data.oxts[k][0][19]] for k in range(n_frames)])
+#   measured_omega = np.array([[data.oxts[k][0].wx, data.oxts[k][0].wy, data.oxts[k][0].wz] for k in range(n_frames)])
+    measured_omega = np.array([[data.oxts[k][0].wf, data.oxts[k][0].wl, -data.oxts[k][0].wu] for k in range(n_frames)])
 
     # Poses
     measured_poses = np.array([data.oxts[k][1] for k in range(n_frames)])
+    measured_poses = np.linalg.inv(measured_poses[0]) @ measured_poses
 
     """
     Run superpoint to get keypoints
@@ -60,24 +61,22 @@ if __name__ == '__main__':
         PARAMS.setAccelerometerCovariance(I * 0.1)
         PARAMS.setGyroscopeCovariance(I * 0.1)
         PARAMS.setIntegrationCovariance(I * 0.1)
-        PARAMS.setUse2ndOrderCoriolis(False)
-        PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
+#       PARAMS.setUse2ndOrderCoriolis(False)
+#       PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
 
-        BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.5)
+        BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.1)
         DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0),
-                            gtsam.Point3(0.0, 0.0, 0))
-        CORR = gtsam.Pose3(gtsam.Rot3.Rodrigues(np.pi, 0, 0),
-                           gtsam.Point3(0, 0, 0))
+                            gtsam.Point3(0.2, 0.2, 0))
 
-        return PARAMS, BIAS_COVARIANCE, DELTA, CORR
+        return PARAMS, BIAS_COVARIANCE, DELTA
 
-    PARAMS, BIAS_COVARIANCE, DELTA, CORR = preintegration_parameters(g)
+    PARAMS, BIAS_COVARIANCE, DELTA = preintegration_parameters(g)
 
     graph = gtsam.NonlinearFactorGraph()
     initial_estimate = gtsam.Values()
 
     # Pose x0 prior
-    pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.5, 0.5, 0.5, 0.6, 0.6, 0.6]))
+    pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.4, 0.4, 0.4, 0.2, 0.2, 0.2]))
     pose_0 = gtsam.Pose3(measured_poses[0])
     graph.push_back(gtsam.PriorFactorPose3(X(0), pose_0, pose_noise))
 
@@ -122,7 +121,6 @@ if __name__ == '__main__':
 
 
 
-
     """
     Solve factor graph
     """
@@ -131,8 +129,6 @@ if __name__ == '__main__':
     params.setMaxIterations(1000)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate, params)
     result = optimizer.optimize()
-
-
 
 
 
