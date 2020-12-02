@@ -33,20 +33,24 @@ USEFUL CLASSES
 
 class VisualInertialOdometryGraph(object):
     
-    def __init__(self, camera_noise)
+    def __init__(self, camera_noise):
         """
         Define factor graph parameters (e.g. noise, camera calibrations, etc) here
         """
+        self.graph = gtsam.NonlinearFactorGraph()
 
-    def add_keypoints(self, ...):
+    def add_keypoints(self):
+        self.a = 0
 
         # do stuff
 
-    def add_imu_measurements(self, ...):
+    def add_imu_measurements(self):
+        self.a = 0
 
         # do stuff
 
     def estimate(self):
+        self.a = 0
 
         # Solve graph and estimate poses
 
