@@ -22,6 +22,9 @@ if __name__ == '__main__':
     # Number of frames
     n_frames = len(data.timestamps)
 
+    # Keypoints to use
+    n_skip = 10
+
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
 
@@ -53,71 +56,20 @@ if __name__ == '__main__':
 
     g = 9.81
 
-    def preintegration_parameters(g):
-        # IMU preintegration parameters
-        # Default Params for a Z-up navigation frame, such as ENU: gravity points along negative Z-axis
-        PARAMS = gtsam.PreintegrationParams.MakeSharedU(g)
-        I = np.eye(3)
-        PARAMS.setAccelerometerCovariance(I * 0.1)
-        PARAMS.setGyroscopeCovariance(I * 0.1)
-        PARAMS.setIntegrationCovariance(I * 0.1)
-#       PARAMS.setUse2ndOrderCoriolis(False)
-#       PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
+    # IMU preintegration parameters
+    # Default Params for a Z-up navigation frame, such as ENU: gravity points along negative Z-axis
+    IMU_PARAMS = gtsam.PreintegrationParams.MakeSharedU(g)
+    I = np.eye(3)
+    IMU_PARAMS.setAccelerometerCovariance(I * 0.1)
+    IMU_PARAMS.setGyroscopeCovariance(I * 0.1)
+    IMU_PARAMS.setIntegrationCovariance(I * 0.1)
+#   IMU_PARAMS.setUse2ndOrderCoriolis(False)
+#   IMU_PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
 
-        BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.1)
-        DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0),
-                            gtsam.Point3(0.2, 0.2, 0))
+    BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.1)
 
-        return PARAMS, BIAS_COVARIANCE, DELTA
-
-    PARAMS, BIAS_COVARIANCE, DELTA = preintegration_parameters(g)
-
-    graph = gtsam.NonlinearFactorGraph()
-    initial_estimate = gtsam.Values()
-
-    # Pose x0 prior
-    pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.4, 0.4, 0.4, 0.2, 0.2, 0.2]))
-    pose_0 = gtsam.Pose3(measured_poses[0])
-    graph.push_back(gtsam.PriorFactorPose3(X(0), pose_0, pose_noise))
-
-    initial_estimate.insert(X(0), gtsam.Pose3(measured_poses[0]))
-
-    # IMU prior
-    bias_key = B(0)
-    bias_noise = gtsam.noiseModel.Isotropic.Sigma(6, 0.5)
-    graph.push_back(gtsam.PriorFactorConstantBias(bias_key, gtsam.imuBias.ConstantBias(), bias_noise))
-
-    initial_estimate.insert(bias_key, gtsam.imuBias.ConstantBias())
-
-    # Velocity prior
-    velocity_noise = gtsam.noiseModel.Isotropic.Sigma(3, 0.5)
-    velocity_0 = measured_vel[0]
-    graph.push_back(gtsam.PriorFactorVector(V(0), velocity_0, velocity_noise))
-
-    initial_estimate.insert(V(0), velocity_0)
-    
-
-    # Preintegrator
-    accum = gtsam.PreintegratedImuMeasurements(PARAMS)
-
-    # Add measurements to factor graph
-    for i in range(n_frames):
-        if i > 0:
-            initial_estimate.insert(X(i), gtsam.Pose3(measured_poses[i]).compose(DELTA))
-
-            if i % 5 == 0:
-                bias_key += 1
-                graph.add(gtsam.BetweenFactorConstantBias(bias_key - 1, bias_key, gtsam.imuBias.ConstantBias(), BIAS_COVARIANCE))
-                initial_estimate.insert(bias_key, gtsam.imuBias.ConstantBias())
-
-            accum.integrateMeasurement(measured_acc[i], measured_omega[i], delta_t[i-1])
-
-            # Add IMU Factor
-            graph.add(gtsam.ImuFactor(X(i - 1), V(i - 1), X(i), V(i), bias_key, accum))
-
-            # Insert velocity 
-            initial_estimate.insert(V(i), measured_vel[i])
-            accum.resetIntegration()
+    vio = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+    vio.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip)
 
 
 
@@ -127,8 +79,7 @@ if __name__ == '__main__':
 
     params = gtsam.LevenbergMarquardtParams()
     params.setMaxIterations(1000)
-    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate, params)
-    result = optimizer.optimize()
+    result = vio.estimate(params)
 
 
 
@@ -142,11 +93,11 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
-    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames)]) 
-    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames)]) 
+    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames//n_skip)]) 
+    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames//n_skip)]) 
 
     axs.plot(x_gt, y_gt, color='k')
-    axs.plot(x_est, y_est, color='b')
+    axs.plot(x_est, y_est, 'o-', color='b')
     axs.set_aspect('equal', 'box')
 
     plt.show()
