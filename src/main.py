@@ -15,15 +15,13 @@ if __name__ == '__main__':
     parser.add_argument('--basedir', dest='basedir', type=str)
     parser.add_argument('--date', dest='date', type=str)
     parser.add_argument('--drive', dest='drive', type=str)
+    parser.add_argument('--n_skip', dest='n_skip', type=int, default=1)
     args = parser.parse_args()
 
     data = pykitti.raw(args.basedir, args.date, args.drive)
 
     # Number of frames
     n_frames = len(data.timestamps)
-
-    # Keypoints to use
-    n_skip = 10
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -51,7 +49,7 @@ if __name__ == '__main__':
     """
 
     """
-    Setup GTSAM factor graph with imu measurements and keypoints
+    Add IMU factors
     """
 
     g = 9.81
@@ -69,8 +67,12 @@ if __name__ == '__main__':
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.1)
 
     vio = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    vio.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip)
+    vio.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
 
+
+    """
+    Add Vision factors
+    """
 
 
     """
@@ -93,8 +95,8 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
-    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames//n_skip)]) 
-    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames//n_skip)]) 
+    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
 
     axs.plot(x_gt, y_gt, color='k')
     axs.plot(x_est, y_est, 'o-', color='b')
