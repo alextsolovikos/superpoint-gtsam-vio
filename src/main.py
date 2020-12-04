@@ -1,10 +1,16 @@
-# import VisualInertialOdometry as vio
+import numpy as np
+import VisualInertialOdometry as vio
 import pykitti
-import matplotlib.pyplot as plt
 import argparse
 import SuperPointPretrainedNetwork.demo_superpoint as sp
-import numpy as np
 import cv2
+
+import gtsam
+from gtsam.symbol_shorthand import B, V, X, L
+
+import matplotlib.pyplot as plt
+plt.rc('text', usetex=True)
+plt.rc('font', size=16)
 
 def get_vision_data(tracker):
     """ Get keypoint-data pairs from the tracks. 
@@ -35,15 +41,38 @@ if __name__ == '__main__':
     parser.add_argument('--basedir', dest='basedir', type=str)
     parser.add_argument('--date', dest='date', type=str)
     parser.add_argument('--drive', dest='drive', type=str)
-    parser.add_argument('--max_length', dest='max_length', type=int, default=5)
     parser.add_argument('--n_skip', dest='n_skip', type=int, default=1)
     args = parser.parse_args()
 
     """ 
-    Use pykitti to get raw data
+    Load KITTI raw data
     """
-    raw_data = pykitti.raw(args.basedir, args.date, args.drive)
 
+    data = pykitti.raw(args.basedir, args.date, args.drive)
+
+    # Number of frames
+    n_frames = len(data.timestamps)
+
+    # Time in seconds
+    time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
+
+    # Time step
+    delta_t = np.diff(time)
+
+    # Velocity
+    measured_vel = np.array([[data.oxts[k][0].vf, data.oxts[k][0].vl, data.oxts[k][0].vu] for k in range(n_frames)])
+
+    # Acceleration
+#   measured_acc = np.array([[data.oxts[k][0].ax, data.oxts[k][0].ay, data.oxts[k][0].az] for k in range(n_frames)])
+    measured_acc = np.array([[data.oxts[k][0].af, data.oxts[k][0].al, data.oxts[k][0].au] for k in range(n_frames)])
+
+    # Angular velocity
+#   measured_omega = np.array([[data.oxts[k][0].wx, data.oxts[k][0].wy, data.oxts[k][0].wz] for k in range(n_frames)])
+    measured_omega = np.array([[data.oxts[k][0].wf, data.oxts[k][0].wl, data.oxts[k][0].wu] for k in range(n_frames)])
+
+    # Poses
+    measured_poses = np.array([data.oxts[k][1] for k in range(n_frames)])
+    measured_poses = np.linalg.inv(measured_poses[0]) @ measured_poses
 
     """
     Run superpoint to get keypoints
@@ -59,34 +88,103 @@ if __name__ == '__main__':
     print('==> Successfully loaded pre-trained network.')
 
     # This class helps merge consecutive point matches into tracks.
-    max_length = len(raw_data.timestamps) // args.n_skip + 1
+    max_length = len(data.timestamps) // args.n_skip + 1
     tracker = sp.PointTracker(max_length=max_length, nn_thresh=fe.nn_thresh)
 
     print('==> Running SuperPoint')
-    N = len(raw_data.timestamps)
+    N = len(data.timestamps)
     idx = range(0, N, args.n_skip);
     for i in idx:
-        img, _ = raw_data.get_gray(i) # only get image from cam0
+        img, _ = data.get_gray(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
         pts, desc, _ = fe.run(img_np)
         tracker.update(pts, desc)
 
+    print('==> Extracting keypoint tracks')
     vision_data = get_vision_data(tracker);
 
 
     """
-    Setup GTSAM factor graph with imu measurements and keypoints
+    Add IMU factors
     """
+    print('==> Adding IMU factors to graph')
+
+    g = 9.81
+
+    # IMU preintegration parameters
+    # Default Params for a Z-up navigation frame, such as ENU: gravity points along negative Z-axis
+    IMU_PARAMS = gtsam.PreintegrationParams.MakeSharedU(g)
+    I = np.eye(3)
+    IMU_PARAMS.setAccelerometerCovariance(I * 0.2)
+    IMU_PARAMS.setGyroscopeCovariance(I * 0.2)
+    IMU_PARAMS.setIntegrationCovariance(I * 0.2)
+#   IMU_PARAMS.setUse2ndOrderCoriolis(False)
+#   IMU_PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
+
+    BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
+
+    vio = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+    vio.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+
+
+    """
+    Add Vision factors
+    """
+    print('==> Adding Vision factors to graph')
+
 
     """
     Solve factor graph
     """
+    print('==> Solving factor graph')
+
+    params = gtsam.LevenbergMarquardtParams()
+    params.setMaxIterations(1000)
+    result = vio.estimate(params)
+
+
 
     """
     Visualize results
     """
+    print('==> Plotting results')
+
+    fig, axs = plt.subplots(1, figsize=(8, 6), facecolor='w', edgecolor='k')
+    plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
+
+    x_gt = measured_poses[:,0,3]
+    y_gt = measured_poses[:,1,3]
+
+    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+
+    axs.plot(x_gt, y_gt, color='k')
+    axs.plot(x_est, y_est, 'o-', color='b')
+    axs.set_aspect('equal', 'box')
+
+    plt.show()
+
+    
+    # Print vision_data matrix
+    track_exists = np.zeros_as(vision_data[:,:,0])
+    track_exists[track_exists != -1] = 1
+    plt.imshow(track_exists, aspect='auto')
+    plt.show()
+    
 
 
+    # Compare xyz with flu frame measurements
+#   fig, axs = plt.subplots(3, figsize=(10, 3.5), facecolor='w', edgecolor='k')
+#   plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
+
+#   axs[0].plot(time, measured_acc[:,0], color='k')
+#   axs[0].plot(time, measured_acc_2[:,0], color='b')
+#   axs[1].plot(time, measured_acc[:,1], color='k')
+#   axs[1].plot(time, measured_acc_2[:,1], color='b')
+#   axs[2].plot(time, measured_acc[:,2], color='k')
+#   axs[2].plot(time, measured_acc_2[:,2], color='b')
+
+#   plt.show()
 
 
 
