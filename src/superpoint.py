@@ -486,27 +486,6 @@ class PointTracker(object):
           clr2 = (255, 0, 0)
           cv2.circle(out, p2, stroke, clr2, -1, lineType=16)
 
-  def get_vision_data(self):
-    """ Get keypoint-data pairs from the tracks. 
-    """
-    # Store the number of points per camera.
-    pts_mem = self.all_pts
-    N = len(pts_mem) # Number of cameras/images.
-    # Get offset ids needed to reference into pts_mem.
-    offsets = self.get_offsets()
-    # Iterate through each track and get the data from the current image.
-    vision_data = -1 * np.ones((self.tracks.shape[0], N, 2), dtype=int)
-    print('Size of vision_data: ', vision_data.shape)
-    for j, track in enumerate(self.tracks):
-      for i in range(N-1):
-        if track[i+3] == -1: # track[i+2] == -1 or 
-          continue
-        offset2 = offsets[i+1]
-        idx2 = int(track[i+3]-offset2)
-        pt2 = pts_mem[i+1][:2, idx2]
-        vision_data[j, i] = np.array([int(round(pt2[0])), int(round(pt2[1]))])
-    return vision_data
-
 
 class VideoStreamer(object):
   """ Class to help process image streams. Three types of possible inputs:"
