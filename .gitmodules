@@ -1,3 +1,5 @@
 [submodule "src/SuperPointPretrainedNetwork"]
 	path = src/SuperPointPretrainedNetwork
 	url = https://github.com/magicleap/SuperPointPretrainedNetwork.git
+[submodule "src/SuperPointPretrainedNetwork"]
+	ignore = untracked
