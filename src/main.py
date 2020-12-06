@@ -9,7 +9,7 @@ import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
 
 import matplotlib.pyplot as plt
-plt.rc('text', usetex=True)
+#plt.rc('text', usetex=True)
 plt.rc('font', size=16)
 
 def get_vision_data(tracker):
@@ -36,7 +36,7 @@ def get_vision_data(tracker):
 
 if __name__ == '__main__':
     # For testing, use the following command in superpoint-gtsam-vio/src:
-    #    python3 main.py --basedir data --date '2011_09_26' --drive '0005'
+    #    python3 main.py --basedir data --date '2011_09_26' --drive '0005' --n_skip 10
     parser = argparse.ArgumentParser(description='Visual Inertial Odometry of KITTI dataset.')
     parser.add_argument('--basedir', dest='basedir', type=str)
     parser.add_argument('--date', dest='date', type=str)
@@ -102,6 +102,8 @@ if __name__ == '__main__':
 
     print('==> Extracting keypoint tracks')
     vision_data = get_vision_data(tracker);
+    print(vision_data[3,:,:])
+    print(vision_data.shape)
 
 
     """
@@ -123,10 +125,13 @@ if __name__ == '__main__':
 
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
 
-    vio = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    vio.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+    vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
 
 
+    imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     """
     Add Vision factors
     """
@@ -139,9 +144,10 @@ if __name__ == '__main__':
     print('==> Solving factor graph')
 
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(1000)
-    result = vio.estimate(params)
+    params.setMaxIterations(10000)
+    result_full = vio_full.estimate(params)
 
+    result_imu = imu_only.estimate(params)
 
 
     """
@@ -155,13 +161,19 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
-    x_est = np.array([result.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
-    y_est = np.array([result.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+    x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+    y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
 
-    axs.plot(x_gt, y_gt, color='k')
-    axs.plot(x_est, y_est, 'o-', color='b')
+
+    x_est_imu = np.array([result_imu.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+    y_est_imu = np.array([result_imu.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+
+    axs.plot(x_gt, y_gt, color='k', label='GT')
+    axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
+    axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')
     axs.set_aspect('equal', 'box')
 
+    plt.legend()
     plt.show()
 
     

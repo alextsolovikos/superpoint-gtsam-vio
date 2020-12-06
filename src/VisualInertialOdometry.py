@@ -104,10 +104,39 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
-    def add_keypoints(self):
-        self.a = 0
+    def add_keypoints(self,vision_data,measured_poses,n_skip):
+      K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
+      print(K)
+      #print(K[0,0])
+      K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+      inv_K = np.linalg.inv(K_np)
 
-        # do stuff
+      #K = gtsam.Cal3_S2(calib_data)
+      offset_pose_key = X(0)
+      
+      measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
+        2, 100.0)  # one pixel in u and v
+      # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
+      #   noise_data)
+      for i in range(vision_data.shape[0]):
+        key_point_initialized=False 
+        
+        #isam.update(graph, initial_estimate)
+
+        for j in range(1000,vision_data.shape[1]):
+          if vision_data[i,j,0] >= 0:
+            self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
+              vision_data[i,j,:], measurement_noise, X(j), L(i), K))
+            if not key_point_initialized:
+              initial_lj = 5.*inv_K@ np.array(
+                 [vision_data[i,j,0],vision_data[i,j,1],1])
+              #initial_lj = np.array([1.,1.,1.])
+              initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
+              self.initial_estimate.insert(L(i), initial_lj[0:3])
+              key_point_initialized = True
+
+      #print(self.initial_estimate)
+      #print(self.graph)
 
     def estimate(self, SOLVER_PARAMS=None):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)
