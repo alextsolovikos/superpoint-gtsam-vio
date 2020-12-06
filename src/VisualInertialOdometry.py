@@ -12,7 +12,7 @@ Description: This is a class that implements a GTSAM factor graph for Visual Ine
 
 
 
-
+import cv2
 import numpy as np
 import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
@@ -104,6 +104,21 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
+    def estimate_poses(self, vision_data):
+       poses = [np.vstack((np.identity(3), np.zeros(3,1)))]
+       for j in range(1, vision_data.shape[1]):
+         pts1 = []
+         pts2 = []
+         for i in range(vision_data.shape[0]):
+             # Collect all point matches between images j-1 and j
+             if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
+                pts1.append(vision_data[i, j-1])
+                pts2.append(vision_data[i, j])
+         E = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
+         rel_pose = cv2.recoverPose(E, pts1, pts2)
+         poses.append(poses[j - 1] @ rel_pose)
+       return poses
+
     def add_keypoints(self,vision_data,measured_poses,n_skip):
       K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
       print(K)
@@ -115,9 +130,10 @@ class VisualInertialOdometryGraph(object):
       offset_pose_key = X(0)
       
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
-        2, 100.0)  # one pixel in u and v
+        2, 10.0)  # one pixel in u and v
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
+      estimated_poses = self.estimate_poses(vision_data)
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
@@ -127,15 +143,18 @@ class VisualInertialOdometryGraph(object):
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
               vision_data[i,j,:], measurement_noise, X(j), L(i), K))
             if not key_point_initialized:
-              initial_lj = 5.*inv_K@ np.array(
-                 [vision_data[i,j,0],vision_data[i,j,1],1])
-              initial_lj = np.array([5.,0.,0.])
-              initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
+              # initial_lj = 5.*inv_K@ np.array(
+              #   [vision_data[i,j,0],vision_data[i,j,1],1])
+              initial_lj = estimated_poses[j] @ np.array([5.,0.,0.])
+              # initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
               self.initial_estimate.insert(L(i), initial_lj[0:3])
               key_point_initialized = True
 
       #print(self.initial_estimate)
       #print(self.graph)
+         
+             
+
 
     def estimate(self, SOLVER_PARAMS=None):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)

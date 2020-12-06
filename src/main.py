@@ -144,11 +144,10 @@ if __name__ == '__main__':
     print('==> Solving factor graph')
 
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(10000)
+    params.setMaxIterations(100)
     result_full = vio_full.estimate(params)
 
     result_imu = imu_only.estimate(params)
-
 
     """
     Visualize results
