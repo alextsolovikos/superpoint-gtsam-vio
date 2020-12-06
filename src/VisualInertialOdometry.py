@@ -121,16 +121,15 @@ class VisualInertialOdometryGraph(object):
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
-        #isam.update(graph, initial_estimate)
 
-        for j in range(1000,vision_data.shape[1]):
+        for j in range(vision_data.shape[1]):
           if vision_data[i,j,0] >= 0:
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
               vision_data[i,j,:], measurement_noise, X(j), L(i), K))
             if not key_point_initialized:
               initial_lj = 5.*inv_K@ np.array(
                  [vision_data[i,j,0],vision_data[i,j,1],1])
-              #initial_lj = np.array([1.,1.,1.])
+              initial_lj = np.array([5.,0.,0.])
               initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
               self.initial_estimate.insert(L(i), initial_lj[0:3])
               key_point_initialized = True
