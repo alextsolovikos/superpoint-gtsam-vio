@@ -73,6 +73,15 @@ if __name__ == '__main__':
     # Poses
     measured_poses = np.array([data.oxts[k][1] for k in range(n_frames)])
     measured_poses = np.linalg.inv(measured_poses[0]) @ measured_poses
+    init_guess_poses = measured_poses.copy()
+    cumul_error = np.zeros((3,))
+    for k in range(n_frames):
+      cumul_error += np.random.randn(3)[:]*0.1
+      init_guess_poses[k,0:3,3] = measured_poses[k,0:3,3] * 1.1 + cumul_error
+      print(init_guess_poses[k,:,:])
+      print( measured_poses[k,:,:])
+      print(' ')
+      
 
     """
     Run superpoint to get keypoints
@@ -126,12 +135,12 @@ if __name__ == '__main__':
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
 
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
+    vio_full.add_imu_measurements(init_guess_poses.copy(), measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    vio_full.add_keypoints(vision_data, init_guess_poses.copy(), args.n_skip)
 
 
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    imu_only.add_imu_measurements(init_guess_poses.copy(), measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     """
     Add Vision factors
     """
