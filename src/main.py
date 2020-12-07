@@ -108,7 +108,7 @@ if __name__ == '__main__':
     print('==> Running SuperPoint')
     idx = range(0, n_frames, args.n_skip);
     for i in idx:
-        img, _ = data.get_gray(i) # only get image from cam0
+        img = data.get_cam1(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
         pts, desc, _ = fe.run(img_np)
         tracker.update(pts, desc)
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     params.setMaxIterations(1000)
     params.setlambdaUpperBound(1000000000)
     params.setlambdaLowerBound(10000)
-    params.setDiagonalDamping(10000)
+    params.setDiagonalDamping(100)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
     params.setRelativeErrorTol(1.e-9)
