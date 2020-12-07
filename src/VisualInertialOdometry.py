@@ -104,18 +104,24 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
-    def estimate_poses(self, vision_data):
-       poses = [np.vstack((np.identity(3), np.zeros(3,1)))]
-       for j in range(1, vision_data.shape[1]):
-         pts1 = []
-         pts2 = []
+    def estimate_poses(self, vision_data, K):
+       poses = [np.vstack((np.hstack((np.identity(3), np.zeros((3,1)))), np.array([0, 0, 0, 1])))]
+       N = vision_data.shape[1]
+       print(N)
+       for j in range(1, N):
+         pts1 = np.zeros((1,2))
+         pts2 = np.zeros((1,2))
+         print(j)
          for i in range(vision_data.shape[0]):
              # Collect all point matches between images j-1 and j
              if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
-                pts1.append(vision_data[i, j-1])
-                pts2.append(vision_data[i, j])
-         E = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
-         rel_pose = cv2.recoverPose(E, pts1, pts2)
+                pts1 = np.vstack((pts1, vision_data[i, j-1]))
+                pts2 = np.vstack((pts2, vision_data[i, j]))
+         print(pts1)
+         print(pts2)
+         E, _ = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
+         _, R, t, _ = cv2.recoverPose(E, pts1, pts2, K, 0.7) # no idea what the 0.7 is, some kind of threshold
+         rel_pose = np.vstack((np.hstack((R,t)), np.array([0, 0, 0, 1])))
          poses.append(poses[j - 1] @ rel_pose)
        return poses
 
@@ -133,7 +139,7 @@ class VisualInertialOdometryGraph(object):
         2, 10.0)  # one pixel in u and v
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
-      estimated_poses = self.estimate_poses(vision_data)
+      estimated_poses = self.estimate_poses(vision_data, K_np)
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
