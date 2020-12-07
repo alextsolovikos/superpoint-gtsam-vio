@@ -111,17 +111,19 @@ class VisualInertialOdometryGraph(object):
        for j in range(1, N):
          pts1 = np.zeros((1,2))
          pts2 = np.zeros((1,2))
-         print(j)
          for i in range(vision_data.shape[0]):
              # Collect all point matches between images j-1 and j
              if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
                 pts1 = np.vstack((pts1, vision_data[i, j-1]))
                 pts2 = np.vstack((pts2, vision_data[i, j]))
-         print(pts1)
-         print(pts2)
-         E, _ = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
-         _, R, t, _ = cv2.recoverPose(E, pts1, pts2, K, 0.7) # no idea what the 0.7 is, some kind of threshold
-         rel_pose = np.vstack((np.hstack((R,t)), np.array([0, 0, 0, 1])))
+         # print(pts1)
+         # print(pts2)
+         if pts1.shape[0] > 1:
+           E, _ = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
+           _, R, t, _ = cv2.recoverPose(E, pts1, pts2, K, 0.7) # no idea what the 0.7 is, some kind of threshold
+           rel_pose = np.vstack((np.hstack((R,t)), np.array([0, 0, 0, 1])))
+         else: 
+           rel_pose = poses[0] # lazy; this is the identity pose defined above
          poses.append(poses[j - 1] @ rel_pose)
        return poses
 
@@ -151,7 +153,7 @@ class VisualInertialOdometryGraph(object):
             if not key_point_initialized:
               # initial_lj = 5.*inv_K@ np.array(
               #   [vision_data[i,j,0],vision_data[i,j,1],1])
-              initial_lj = estimated_poses[j] @ np.array([5.,0.,0.])
+              initial_lj = estimated_poses[j] @ np.array([5.,0.,0.,1.])
               # initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
               self.initial_estimate.insert(L(i), initial_lj[0:3])
               key_point_initialized = True
