@@ -82,8 +82,8 @@ if __name__ == '__main__':
     # Inputs from list of default options in superpoint_demo.py.
     fe = sp.SuperPointFrontend(weights_path='src/SuperPointPretrainedNetwork/superpoint_v1.pth',
                             nms_dist=4,
-                            conf_thresh=0.015,
-                            nn_thresh=0.7,
+                            conf_thresh=0.15,  # 0.015
+                            nn_thresh=0.9,
                             cuda=False)
     print('==> Successfully loaded pre-trained network.')
 
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
 
     """
-    Add IMU factors
+    GTSAM parameters
     """
     print('==> Adding IMU factors to graph')
 
@@ -125,29 +125,44 @@ if __name__ == '__main__':
 
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
 
+
+    """
+    Solve IMU-only graph
+    """
+    params = gtsam.LevenbergMarquardtParams()
+    params.setMaxIterations(1000)
+#   params.setDiagonalDamping(10)
+    params.setVerbosity('ERROR')
+    params.setVerbosityLM('SUMMARY')
+#   params.setVerbosity('SUMMARY')
+
+    print('==> Solving IMU-only graph')
+    imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    result_imu = imu_only.estimate(params)
+
+
+
+    """
+    Solve VIO graph
+    """
+    params = gtsam.LevenbergMarquardtParams()
+    params.setMaxIterations(1000)
+    params.setlambdaUpperBound(100000000)
+    params.setlambdaLowerBound(1000)
+    params.setDiagonalDamping(10000)
+    params.setVerbosity('ERROR')
+    params.setVerbosityLM('SUMMARY')
+    params.setRelativeErrorTol(1.e-9)
+#   params.setVerbosity('SUMMARY')
+
+    print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
 
-
-    imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    """
-    Add Vision factors
-    """
-    print('==> Adding Vision factors to graph')
-
-
-    """
-    Solve factor graph
-    """
-    print('==> Solving factor graph')
-
-    params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(10000)
     result_full = vio_full.estimate(params)
 
-    result_imu = imu_only.estimate(params)
 
 
     """
@@ -177,11 +192,11 @@ if __name__ == '__main__':
     plt.show()
 
     
-    # Print vision_data matrix
-    track_exists = np.zeros_as(vision_data[:,:,0])
-    track_exists[track_exists != -1] = 1
-    plt.imshow(track_exists, aspect='auto')
-    plt.show()
+#   # Print vision_data matrix
+#   track_exists = np.zeros_like(vision_data[:,:,0])
+#   track_exists[track_exists != -1] = 1
+#   plt.imshow(track_exists, aspect='auto')
+#   plt.show()
     
 
 

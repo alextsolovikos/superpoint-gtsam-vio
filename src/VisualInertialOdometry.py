@@ -42,12 +42,11 @@ class VisualInertialOdometryGraph(object):
         self.initial_estimate = gtsam.Values()
         self.IMU_PARAMS = IMU_PARAMS
         self.BIAS_COVARIANCE = BIAS_COVARIANCE
-        DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.5),
-                            gtsam.Point3(2.0, -2.0, 0.5))
 
-    def add_imu_measurements(self, measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip):
+    def add_imu_measurements(self, measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip, initial_poses=None):
 
         n_frames = measured_poses.shape[0]
+
 
         # Check if sizes are correct
         assert measured_poses.shape[0] == n_frames
@@ -56,7 +55,7 @@ class VisualInertialOdometryGraph(object):
 
         # Pose prior
         pose_key = X(0)
-        pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.4, 0.4, 0.4, 0.2, 0.2, 0.2]))
+        pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.2, 0.2, 0.2, 0.2, 0.2, 0.2]))
         pose_0 = gtsam.Pose3(measured_poses[0])
         self.graph.push_back(gtsam.PriorFactorPose3(pose_key, pose_0, pose_noise))
 
@@ -86,7 +85,9 @@ class VisualInertialOdometryGraph(object):
             accum.integrateMeasurement(measured_acc[i], measured_omega[i], delta_t[i-1])
             if i % n_skip == 0:
                 pose_key += 1
-                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]))
+                DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
+                                    gtsam.Point3(1 * np.random.randn(), 1 * np.random.randn(), 1 * np.random.randn()))
+                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
 
                 velocity_key += 1
                 self.initial_estimate.insert(velocity_key, measured_vel[i])
@@ -108,38 +109,39 @@ class VisualInertialOdometryGraph(object):
       K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
       print(K)
       #print(K[0,0])
-      K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
-      inv_K = np.linalg.inv(K_np)
+      K_np = np.array([[984.244, 0., 690., 0],[0., 980.814, 233.197, 0],[0., 0., 1., 0]])
+      inv_K = np.linalg.pinv(K_np)
+
 
       #K = gtsam.Cal3_S2(calib_data)
       offset_pose_key = X(0)
       
-      measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
-        2, 100.0)  # one pixel in u and v
+      measurement_noise = gtsam.noiseModel.Isotropic.Sigma(2, 10.0) 
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
-      for i in range(vision_data.shape[0]):
+      print('vision_data.shape = ', vision_data.shape)
+      for i in range(0,vision_data.shape[0],10):
         key_point_initialized=False 
-        
-
         for j in range(vision_data.shape[1]):
           if vision_data[i,j,0] >= 0:
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
               vision_data[i,j,:], measurement_noise, X(j), L(i), K))
             if not key_point_initialized:
-              initial_lj = 5.*inv_K@ np.array(
-                 [vision_data[i,j,0],vision_data[i,j,1],1])
-              initial_lj = np.array([5.,0.,0.])
-              initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
+              initial_lj = inv_K @ np.array([vision_data[i,j,0],vision_data[i,j,1], 1])
+#             initial_lj = np.array([20 + 20 * np.random.random(), 0., 0.])
+#             initial_lj = measured_poses[j*n_skip] @ np.hstack((initial_lj, [1.]))
+#             initial_lj = measured_poses[j*n_skip][0:3,3]
+              print(initial_lj)
               self.initial_estimate.insert(L(i), initial_lj[0:3])
               key_point_initialized = True
-
-      #print(self.initial_estimate)
-      #print(self.graph)
 
     def estimate(self, SOLVER_PARAMS=None):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)
         self.result = self.optimizer.optimize()
+
+#       for i in range(20):
+#           self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.result, SOLVER_PARAMS)
+#           self.result = self.optimizer.optimize()
 
         return self.result
 
