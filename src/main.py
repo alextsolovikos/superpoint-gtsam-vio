@@ -4,6 +4,7 @@ import pykitti
 import argparse
 import SuperPointPretrainedNetwork.demo_superpoint as sp
 import cv2
+import os
 
 import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
@@ -75,6 +76,19 @@ if __name__ == '__main__':
     measured_poses = np.linalg.inv(measured_poses[0]) @ measured_poses
 
     """
+    Load depth data
+    """
+    depth_data_path = os.path.join(args.basedir, args.date, '2011_09_26_drive_0005_sync/proj_depth/groundtruth/image_02')
+    depth = []
+
+    # Load in the images
+    for filepath in sorted(os.listdir(depth_data_path)):
+        if filepath[0] == '.':
+            continue
+        print(filepath)
+        depth.append(cv2.imread(os.path.join(depth_data_path, filepath)))
+
+    """
     Run superpoint to get keypoints
     """
     print('==> Loading pre-trained network.')
@@ -92,8 +106,7 @@ if __name__ == '__main__':
     tracker = sp.PointTracker(max_length=max_length, nn_thresh=fe.nn_thresh)
 
     print('==> Running SuperPoint')
-    N = len(data.timestamps)
-    idx = range(0, N, args.n_skip);
+    idx = range(0, n_frames, args.n_skip);
     for i in idx:
         img, _ = data.get_gray(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
@@ -148,18 +161,20 @@ if __name__ == '__main__':
     """
     params = gtsam.LevenbergMarquardtParams()
     params.setMaxIterations(1000)
-    params.setlambdaUpperBound(100000000)
-    params.setlambdaLowerBound(1000)
+    params.setlambdaUpperBound(1000000000)
+    params.setlambdaLowerBound(10000)
     params.setDiagonalDamping(10000)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
     params.setRelativeErrorTol(1.e-9)
 #   params.setVerbosity('SUMMARY')
 
+
+
     print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
+    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth)
 
     result_full = vio_full.estimate(params)
 
