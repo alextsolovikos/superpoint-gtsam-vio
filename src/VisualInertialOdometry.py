@@ -104,7 +104,7 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
-    def add_keypoints(self, vision_data, init_guess_poses, n_skip):
+    def add_keypoints(self, vision_data, init_guess_poses, n_skip,use_imu=True):
       identity_pose = np.eye(4)
       K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
       K = gtsam.Cal3_S2(721.5377, 721.5377, 0.0, 609.5593,172.854 )
@@ -142,13 +142,18 @@ class VisualInertialOdometryGraph(object):
 
       cam2imu_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0., 0., 0., 0., 0., 0.]))
       #K = gtsam.Cal3_S2(calib_data)
-      offset_pose_key = X(0)
       
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
         2, 1.0)  # one pixel in u and v
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
+      #from mpl_toolkits.mplot3d import Axes3D
+      import matplotlib.pyplot as plt
+      #fig = plt.figure()
+      #ax = fig.add_subplot(111, projection='3d')
       n_keypoints = 0
+      print(vision_data.shape)
+      print(init_guess_poses.shape)
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
@@ -156,7 +161,16 @@ class VisualInertialOdometryGraph(object):
         count = 0.
         for j in range(vision_data.shape[1]):
           if i == 0:
-            self.initial_estimate.insert(X(j+vision_data.shape[1]), gtsam.Pose3(init_guess_poses[j*n_skip]))
+            if not use_imu:
+              if j == 0:
+                pose0_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0., 0., 0., 0., 0., 0.]))
+                self.graph.push_back(gtsam.PriorFactorPose3(X(0),
+                  gtsam.Pose3(init_guess_poses[0]), pose0_noise))
+              self.initial_estimate.insert(
+                X(j), gtsam.Pose3(init_guess_poses[j*n_skip]))
+            self.initial_estimate.insert(
+              X(j+vision_data.shape[1]), gtsam.Pose3(
+              init_guess_poses[j*n_skip]))
             self.graph.push_back(gtsam.BetweenFactorPose3(
               X(j+vision_data.shape[1]), X(j), gtsam.Pose3(
               cam_to_imu), cam2imu_noise))
@@ -171,10 +185,21 @@ class VisualInertialOdometryGraph(object):
                 vision_data[i,j,:], measurement_noise,
                 X(j+vision_data.shape[1]), L(i), K))
               if not key_point_initialized:
-                initial_lj = 5.*inv_K@ np.array(
+                initial_lj = 3.*inv_K@ np.array(
                    [vision_data[i,j,0],vision_data[i,j,1],1])
-                initial_lj = np.array([5.,0.,0.])
+                initial_lj = np.array([[0.,0.,1.],[0.,1,0],[1,0,0]]).dot(initial_lj)
+             #   print(vision_data[i,j])
+             #   print(initial_lj)
+             #   #initial_lj = np.array([5.,0.,0.])
                 initial_lj = (init_guess_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
+                plt.scatter(initial_lj[0],initial_lj[1])
+             #   print(i,j)
+                print(initial_lj)
+             #   print(init_guess_poses[j*n_skip])
+             #   #print(inv_K@np.array([0,100,1]))
+             #   #print(inv_K@np.array([1350,100,1]))
+             #  
+             #   print(' ')
                 self.initial_estimate.insert(L(i), initial_lj[0:3])
                 key_point_initialized = True
 

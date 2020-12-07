@@ -35,6 +35,7 @@ def get_vision_data(tracker):
 
 
 if __name__ == '__main__':
+    np.random.seed(1000)
     # For testing, use the following command in superpoint-gtsam-vio/src:
     #    python3 main.py --basedir data --date '2011_09_26' --drive '0005' --n_skip 10
     parser = argparse.ArgumentParser(description='Visual Inertial Odometry of KITTI dataset.')
@@ -52,6 +53,7 @@ if __name__ == '__main__':
 
     # Number of frames
     n_frames = len(data.timestamps)
+    n_frames = 10
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -76,13 +78,9 @@ if __name__ == '__main__':
     init_guess_poses = measured_poses.copy()
     cumul_error = np.zeros((3,))
     for k in range(n_frames):
-      cumul_error += np.random.randn(3)[:]*0.1
-      init_guess_poses[k,0:3,3] = measured_poses[k,0:3,3] * 1.1 + cumul_error
-      print(init_guess_poses[k,:,:])
-      print( measured_poses[k,:,:])
-      print(' ')
+      cumul_error += np.random.randn(3)[:]*0.3
+      init_guess_poses[k,0:3,3] = measured_poses[k,0:3,3] * 1.5 + cumul_error
       
-
     """
     Run superpoint to get keypoints
     """
@@ -91,8 +89,8 @@ if __name__ == '__main__':
     # Inputs from list of default options in superpoint_demo.py.
     fe = sp.SuperPointFrontend(weights_path='src/SuperPointPretrainedNetwork/superpoint_v1.pth',
                             nms_dist=4,
-                            conf_thresh=0.015,
-                            nn_thresh=0.7,
+                            conf_thresh=0.615,
+                            nn_thresh=0.999,
                             cuda=False)
     print('==> Successfully loaded pre-trained network.')
 
@@ -101,8 +99,7 @@ if __name__ == '__main__':
     tracker = sp.PointTracker(max_length=max_length, nn_thresh=fe.nn_thresh)
 
     print('==> Running SuperPoint')
-    N = len(data.timestamps)
-    idx = range(0, N, args.n_skip);
+    idx = range(0, n_frames, args.n_skip);
     for i in idx:
         img, _ = data.get_gray(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
@@ -136,7 +133,7 @@ if __name__ == '__main__':
 
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(init_guess_poses.copy(), measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data, init_guess_poses.copy(), args.n_skip)
+    vio_full.add_keypoints(vision_data[:,0:10,:], init_guess_poses.copy(), args.n_skip,use_imu=True)
 
 
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
@@ -154,11 +151,17 @@ if __name__ == '__main__':
 
     params = gtsam.LevenbergMarquardtParams()
     params.setMaxIterations(10000)
-    result_full = vio_full.estimate(params)
+    params.setRelativeErrorTol(1e-9)
+    #params.setErrorTol(1e-9)
+    params.setAbsoluteErrorTol(1e-9)
 
     result_imu = imu_only.estimate(params)
 
+    params.setVerbosityLM('SUMMARY')
+    params.setVerbosity('ERROR')
+    params.setlambdaUpperBound(1e12)
 
+    result_full = vio_full.estimate(params)
     """
     Visualize results
     """
