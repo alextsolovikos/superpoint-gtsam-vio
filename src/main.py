@@ -45,6 +45,9 @@ if __name__ == '__main__':
     parser.add_argument('--n_skip', dest='n_skip', type=int, default=1)
     args = parser.parse_args()
 
+    fig, axs = plt.subplots(1, figsize=(12, 6), facecolor='w', edgecolor='k')
+    plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
+
     """ 
     Load KITTI raw data
     """
@@ -85,7 +88,6 @@ if __name__ == '__main__':
     for filepath in sorted(os.listdir(depth_data_path)):
         if filepath[0] == '.':
             continue
-        print(filepath)
         depth.append(cv2.imread(os.path.join(depth_data_path, filepath)))
 
     """
@@ -160,13 +162,13 @@ if __name__ == '__main__':
     Solve VIO graph
     """
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(1000)
-    params.setlambdaUpperBound(1000000000)
-    params.setlambdaLowerBound(10000)
+    params.setMaxIterations(10000)
+    params.setlambdaUpperBound(1.e+9)
+    params.setlambdaLowerBound(100)
     params.setDiagonalDamping(100)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
-    params.setRelativeErrorTol(1.e-9)
+    params.setRelativeErrorTol(1.e-10)
 #   params.setVerbosity('SUMMARY')
 
 
@@ -174,7 +176,7 @@ if __name__ == '__main__':
     print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth)
+    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
 
     result_full = vio_full.estimate(params)
 
@@ -184,9 +186,6 @@ if __name__ == '__main__':
     Visualize results
     """
     print('==> Plotting results')
-
-    fig, axs = plt.subplots(1, figsize=(8, 6), facecolor='w', edgecolor='k')
-    plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
 
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]

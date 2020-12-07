@@ -87,7 +87,7 @@ class VisualInertialOdometryGraph(object):
             if i % n_skip == 0:
                 pose_key += 1
                 DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
-                                    gtsam.Point3(1 * np.random.randn(), 1 * np.random.randn(), 1 * np.random.randn()))
+                                    gtsam.Point3(4 * np.random.randn(), 4 * np.random.randn(), 4 * np.random.randn()))
                 self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
 
                 velocity_key += 1
@@ -106,15 +106,7 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
-    def add_keypoints(self,vision_data,measured_poses,n_skip, depth):
-      K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
-      print(K)
-      #print(K[0,0])
-#     K_np = np.array([[984.244, 0., 690., 0],[0., 980.814, 233.197, 0],[0., 0., 1., 0]])
-      K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02, 0], 
-                       [0.000000e+00, 9.878386e+02, 2.455590e+02, 0], 
-                       [0.000000e+00, 0.000000e+00, 1.000000e+00, 0]])
-      inv_K = np.linalg.pinv(K_np)
+    def add_keypoints(self,vision_data,measured_poses,n_skip, depth, axs):
       R_rect = np.array([[9.999239e-01, 9.837760e-03, -7.445048e-03, 0.],
                          [ -9.869795e-03, 9.999421e-01, -4.278459e-03, 0.],
                          [ 7.402527e-03, 4.351614e-03, 9.999631e-01, 0.],
@@ -131,25 +123,32 @@ class VisualInertialOdometryGraph(object):
       T_cam_velo = np.zeros((4,4))
       T_velo_imu[3,3] = 1.
       T_cam_velo[3,3] = 1.
-      T_velo_imu[0:3,0:3] = R_velo_imu
-      T_velo_imu[0:3,3] = t_velo_imu
-      T_cam_velo[0:3,0:3] = R_cam_velo
-      T_cam_velo[0:3,3] = t_cam_velo
-      cam_to_imu = R_rect.dot(T_cam_velo.dot(T_velo_imu))
+      T_velo_imu[:3,:3] = R_velo_imu
+      T_velo_imu[:3,3] = t_velo_imu
+      T_cam_velo[:3,:3] = R_cam_velo
+      T_cam_velo[:3,3] = t_cam_velo
+      cam_to_imu = R_rect @ T_cam_velo @ T_velo_imu
+      CAM_TO_IMU_POSE = gtsam.Pose3(cam_to_imu)
+      imu_to_cam = np.linalg.inv(cam_to_imu)
+      IMU_TO_CAM_POSE = gtsam.Pose3(imu_to_cam)
+      print("IMU_TO_CAM_POSE", IMU_TO_CAM_POSE)
 
-      #K = gtsam.Cal3_S2(calib_data)
-      offset_pose_key = X(0)
-      
+      K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
+                       [0.000000e+00, 9.878386e+02, 2.455590e+02], 
+                       [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
+      K = gtsam.Cal3_S2(K_np[0,0], K_np[1,1], 0., K_np[0,2], K_np[1,2])
+      print("K_np = ", K_np)
+
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(2, 1.0) 
-      # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
-      #   noise_data)
-      print('vision_data.shape = ', vision_data.shape)
-      for i in range(0, vision_data.shape[0], 10):
+      for i in range(0, vision_data.shape[0], 20):
         key_point_initialized=False 
         for j in range(vision_data.shape[1]-1):
           if vision_data[i,j,0] >= 0:
+            zp = float(depth[j * n_skip][vision_data[i,j,1], vision_data[i,j,0], 2])
+            if zp == 0:
+                continue
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
-              vision_data[i,j,:], measurement_noise, X(j), L(i), K))
+              vision_data[i,j,:], measurement_noise, X(j), L(i), K, IMU_TO_CAM_POSE))
             if not key_point_initialized:
                 """
                 Method 1
@@ -184,21 +183,21 @@ class VisualInertialOdometryGraph(object):
 
                 # Depth:
 #               zp = 10. + 0.5 * np.random.randn() # m
-#               zp = 5 * np.random.random() # m
-                zp = depth[j * n_skip][vision_data[i,j,1], vision_data[i,j,0], 0]
-                xp = (vision_data[i,j,0] - cx) / fx * zp
-                yp = (vision_data[i,j,1] - cy) / fy * zp
+#               zp = 5 
+                zp = float(depth[j * n_skip][vision_data[i,j,1], vision_data[i,j,0], 2])
+                xp = float(vision_data[i,j,0] - cx) / fx * zp
+                yp = float(vision_data[i,j,1] - cy) / fy * zp
+                print(xp, yp, zp)
 
                 # Convert to global
-                Xg = measured_poses[j*n_skip] @ np.linalg.inv(cam_to_imu) @ np.array([xp, yp, zp, 1])
+#               Xg = measured_poses[j*n_skip] @ np.array([zp, -xp, -yp, 1])
+                Xg = measured_poses[j*n_skip] @ imu_to_cam @ np.array([xp, yp, zp, 1])
 #               Xg = measured_poses[j*n_skip] @ cam_to_imu @ np.array([xp, yp, zp, 1])
+#               Xg = measured_poses[j*n_skip] @ np.array([xp, yp, zp, 1])
                 print(Xg)
-                plt.scatter(Xg[0], Xg[1], s=10)
+                axs.scatter(Xg[0], Xg[1], s=10)
                 self.initial_estimate.insert(L(i), Xg[:3])
                 
-
-
-
                 key_point_initialized = True
 
     def estimate(self, SOLVER_PARAMS=None):
