@@ -160,6 +160,13 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
+    
+    K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+    cam_poses_init = vio_full.estimate_poses(vision_data)
+    flu_poses_init = vio_full.estimate_flu_poses(cam_poses_init)
+    x_init = np.array([pose[0,3] for pose in flu_poses_init]) 
+    y_init = np.array([pose[1,3] for pose in flu_poses_init]) 
+
     x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
 
@@ -167,6 +174,7 @@ if __name__ == '__main__':
     x_est_imu = np.array([result_imu.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_imu = np.array([result_imu.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
 
+    axs.plot(x_init, y_init, 'o-', color='m', label='INIT')
     axs.plot(x_gt, y_gt, color='k', label='GT')
     axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
     axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')

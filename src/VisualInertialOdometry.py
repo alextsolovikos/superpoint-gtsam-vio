@@ -104,8 +104,11 @@ class VisualInertialOdometryGraph(object):
 
         # do stuff
 
-    def estimate_poses(self, vision_data, K):
-       poses = [np.vstack((np.hstack((np.identity(3), np.zeros((3,1)))), np.array([0, 0, 0, 1])))]
+    def estimate_poses(self, vision_data):
+       s = 2.2 # lazy; scale translations to kind of match GT plot
+       A = np.array([(721.5377, 0., 609.5593), (0., 721.5377, 172.8540), (0., 0., 1.)])
+       K = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+       poses = [np.identity(4)] 
        N = vision_data.shape[1]
        print(N)
        for j in range(1, N):
@@ -116,16 +119,26 @@ class VisualInertialOdometryGraph(object):
              if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
                 pts1 = np.vstack((pts1, vision_data[i, j-1]))
                 pts2 = np.vstack((pts2, vision_data[i, j]))
-         # print(pts1)
-         # print(pts2)
+         pts1 = np.delete(pts1, 0, 0)
+         pts2 = np.delete(pts2, 0, 0)
+         pts1 = pts1.astype(float)
+         pts2 = pts2.astype(float)
          if pts1.shape[0] > 1:
-           E, _ = cv2.findEssentialMat(pts1, pts2) # need to get focal length in here probably
-           _, R, t, _ = cv2.recoverPose(E, pts1, pts2, K, 0.7) # no idea what the 0.7 is, some kind of threshold
-           rel_pose = np.vstack((np.hstack((R,t)), np.array([0, 0, 0, 1])))
-         else: 
-           rel_pose = poses[0] # lazy; this is the identity pose defined above
+           E, _ = cv2.findEssentialMat(pts2, pts1, A)
+           _, R, t, _ = cv2.recoverPose(E, pts2, pts1, A)
+           t = s * t
+           rel_pose = np.vstack((np.hstack((R,t)), np.array([0., 0., 0., 1.])))
+         else:
+           print('Found no matches!') 
+           rel_pose = np.identity(4)
          poses.append(poses[j - 1] @ rel_pose)
        return poses
+
+    def estimate_flu_poses(self, cam_poses): 
+       # Transform from cam to flu 
+       T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
+       flu_poses = [T_cf @ cp for cp in cam_poses]
+       return flu_poses
 
     def add_keypoints(self,vision_data,measured_poses,n_skip):
       K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
@@ -141,7 +154,7 @@ class VisualInertialOdometryGraph(object):
         2, 10.0)  # one pixel in u and v
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
-      estimated_poses = self.estimate_poses(vision_data, K_np)
+      estimated_poses = self.estimate_poses(vision_data)
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
