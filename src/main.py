@@ -39,8 +39,7 @@ def get_vision_data(tracker):
 
 
 if __name__ == '__main__':
-    # For testing, use the following command in superpoint-gtsam-vio/src:
-    #    python3 main.py --basedir data --date '2011_09_26' --drive '0005' --n_skip 10
+    # Input arguments
     parser = argparse.ArgumentParser(description='Visual Inertial Odometry of KITTI dataset.')
     parser.add_argument('--basedir', dest='basedir', type=str)
     parser.add_argument('--date', dest='date', type=str)
@@ -59,7 +58,6 @@ if __name__ == '__main__':
     data = pykitti.raw(args.basedir, args.date, args.drive)
 
     # Number of frames
-#   n_frames = 
     if args.n_frames is None:
         n_frames = len(data.timestamps)
     else:
@@ -75,11 +73,9 @@ if __name__ == '__main__':
     measured_vel = np.array([[data.oxts[k][0].vf, data.oxts[k][0].vl, data.oxts[k][0].vu] for k in range(n_frames)])
 
     # Acceleration
-#   measured_acc = np.array([[data.oxts[k][0].ax, data.oxts[k][0].ay, data.oxts[k][0].az] for k in range(n_frames)])
     measured_acc = np.array([[data.oxts[k][0].af, data.oxts[k][0].al, data.oxts[k][0].au] for k in range(n_frames)])
 
     # Angular velocity
-#   measured_omega = np.array([[data.oxts[k][0].wx, data.oxts[k][0].wy, data.oxts[k][0].wz] for k in range(n_frames)])
     measured_omega = np.array([[data.oxts[k][0].wf, data.oxts[k][0].wl, data.oxts[k][0].wu] for k in range(n_frames)])
 
     # Poses
