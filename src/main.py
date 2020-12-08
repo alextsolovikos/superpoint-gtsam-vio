@@ -55,7 +55,8 @@ if __name__ == '__main__':
     data = pykitti.raw(args.basedir, args.date, args.drive)
 
     # Number of frames
-    n_frames = len(data.timestamps)
+#   n_frames = len(data.timestamps)
+    n_frames = 141
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -104,12 +105,13 @@ if __name__ == '__main__':
     print('==> Successfully loaded pre-trained network.')
 
     # This class helps merge consecutive point matches into tracks.
-    max_length = len(data.timestamps) // args.n_skip + 1
+    max_length = n_frames // args.n_skip + 1
     tracker = sp.PointTracker(max_length=max_length, nn_thresh=fe.nn_thresh)
 
     print('==> Running SuperPoint')
     idx = range(0, n_frames, args.n_skip);
     for i in idx:
+        print(i)
         img = data.get_cam1(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
         pts, desc, _ = fe.run(img_np)
@@ -117,7 +119,6 @@ if __name__ == '__main__':
 
     print('==> Extracting keypoint tracks')
     vision_data = get_vision_data(tracker);
-    print(vision_data[3,:,:])
     print(vision_data.shape)
 
 
@@ -162,13 +163,14 @@ if __name__ == '__main__':
     Solve VIO graph
     """
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(10000)
-    params.setlambdaUpperBound(1.e+9)
-    params.setlambdaLowerBound(100)
-    params.setDiagonalDamping(100)
+    params.setMaxIterations(20000)
+    params.setlambdaUpperBound(1.e+6)
+    params.setlambdaLowerBound(10)
+    params.setDiagonalDamping(10000)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
-    params.setRelativeErrorTol(1.e-10)
+    params.setRelativeErrorTol(1.e-8)
+    params.setAbsoluteErrorTol(1.e-8)
 #   params.setVerbosity('SUMMARY')
 
 
@@ -176,6 +178,8 @@ if __name__ == '__main__':
     print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    print('measured_poses.shape: ', measured_poses.shape)
+    print('args.n_skip ', args.n_skip)
     vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
 
     result_full = vio_full.estimate(params)

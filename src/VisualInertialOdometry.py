@@ -17,6 +17,7 @@ import numpy as np
 import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
 import matplotlib.pyplot as plt
+np.random.seed(0)
 
 """
 USEFUL CLASSES
@@ -71,7 +72,7 @@ class VisualInertialOdometryGraph(object):
 
         # Velocity prior
         velocity_key = V(0)
-        velocity_noise = gtsam.noiseModel.Isotropic.Sigma(3, 0.5)
+        velocity_noise = gtsam.noiseModel.Isotropic.Sigma(3, .5)
         velocity_0 = measured_vel[0]
         self.graph.push_back(gtsam.PriorFactorVector(velocity_key, velocity_0, velocity_noise))
 
@@ -87,7 +88,7 @@ class VisualInertialOdometryGraph(object):
             if i % n_skip == 0:
                 pose_key += 1
                 DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
-                                    gtsam.Point3(4 * np.random.randn(), 4 * np.random.randn(), 4 * np.random.randn()))
+                                    gtsam.Point3(1 * np.random.randn(), 1 * np.random.randn(), 1 * np.random.randn()))
                 self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
 
                 velocity_key += 1
@@ -133,14 +134,32 @@ class VisualInertialOdometryGraph(object):
       IMU_TO_CAM_POSE = gtsam.Pose3(imu_to_cam)
       print("IMU_TO_CAM_POSE", IMU_TO_CAM_POSE)
 
-      K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
-                       [0.000000e+00, 9.878386e+02, 2.455590e+02], 
+#     K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
+#                      [0.000000e+00, 9.878386e+02, 2.455590e+02], 
+#                      [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
+      K_np = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02], 
+                       [0.000000e+00, 7.215377e+02, 1.728540e+02], 
                        [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
+
       K = gtsam.Cal3_S2(K_np[0,0], K_np[1,1], 0., K_np[0,2], K_np[1,2])
       print("K_np = ", K_np)
 
-      measurement_noise = gtsam.noiseModel.Isotropic.Sigma(2, 1.0) 
+
+      valid_track = np.zeros(vision_data.shape[0], dtype=bool)
+      N = vision_data.shape[1]
+      for i in range(vision_data.shape[0]):
+          track_length = N - np.sum(vision_data[i,:,0] == -1)
+          if track_length > 1 and track_length < 0.5*N:
+              valid_track[i] = True
+      print('valid tracks: ')
+      print(valid_track)
+
+
+      count = 0
+      measurement_noise = gtsam.noiseModel.Isotropic.Sigma(2, 10.0) 
       for i in range(0, vision_data.shape[0], 20):
+        if not valid_track[i]:
+            continue
         key_point_initialized=False 
         for j in range(vision_data.shape[1]-1):
           if vision_data[i,j,0] >= 0:
@@ -150,6 +169,7 @@ class VisualInertialOdometryGraph(object):
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
               vision_data[i,j,:], measurement_noise, X(j), L(i), K, IMU_TO_CAM_POSE))
             if not key_point_initialized:
+                count += 1
                 """
                 Method 1
                 """
@@ -199,6 +219,7 @@ class VisualInertialOdometryGraph(object):
                 self.initial_estimate.insert(L(i), Xg[:3])
                 
                 key_point_initialized = True
+      print('===============> Using ', count, ' tracks')
 
     def estimate(self, SOLVER_PARAMS=None):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)
