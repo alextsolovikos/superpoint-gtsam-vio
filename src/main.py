@@ -10,7 +10,7 @@ import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
 
 import matplotlib.pyplot as plt
-#plt.rc('text', usetex=True)
+plt.rc('text', usetex=True)
 plt.rc('font', size=16)
 
 def get_vision_data(tracker):
@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
     # Number of frames
 #   n_frames = len(data.timestamps)
-    n_frames = 301
+    n_frames = 501
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -156,6 +156,7 @@ if __name__ == '__main__':
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     result_imu = imu_only.estimate(params)
+#   result_imu, marginals_full = imu_only.estimate(SOLVER_PARAMS=params, marginals=True)
 
 
 
@@ -163,10 +164,10 @@ if __name__ == '__main__':
     Solve VIO graph
     """
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(5000)
-    params.setlambdaUpperBound(1.e+8)
-    params.setlambdaLowerBound(10)
-    params.setDiagonalDamping(100000)
+    params.setMaxIterations(1000)
+    params.setlambdaUpperBound(1.e+6)
+    params.setlambdaLowerBound(0.1)
+    params.setDiagonalDamping(1000)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
     params.setRelativeErrorTol(1.e-9)
@@ -182,7 +183,8 @@ if __name__ == '__main__':
     print('args.n_skip ', args.n_skip)
     vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
 
-    result_full = vio_full.estimate(params)
+    result_full = vio_full.estimate(SOLVER_PARAMS=params)
+#   result_full, marginals_full = vio_full.estimate(SOLVER_PARAMS=params, marginals=True)
 
 
 
@@ -192,6 +194,7 @@ if __name__ == '__main__':
     print('==> Plotting results')
 
     x_gt = measured_poses[:,0,3]
+    y_gt = measured_poses[:,1,3]
     y_gt = measured_poses[:,1,3]
 
     x_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
@@ -205,14 +208,43 @@ if __name__ == '__main__':
 
     axs.plot(x_gt, y_gt, color='k', label='GT')
     axs.plot(x_init, y_init, 'x-', color='m', label='Initial')
-    axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
     axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')
+    axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
     axs.set_aspect('equal', 'box')
     plt.grid(True)
 
     plt.legend()
     plt.show()
 
+    # Plot pose as time series
+    fig, axs = plt.subplots(3, figsize=(12, 6), facecolor='w', edgecolor='k')
+    plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
+    # Plot x
+    axs[0].grid(True)
+    axs[0].plot(time, x_gt, label='GT')
+    axs[0].plot(time[::args.n_skip], x_init, label='Initial')
+    axs[0].plot(time[::args.n_skip], x_est_imu, label='IMU')
+    axs[0].plot(time[::args.n_skip], x_est_full, label='VIO')
+    axs[0].set_xlabel('$t\ (s)$')
+    axs[0].set_xlabel('$x\ (m)$')
+
+    # Plot y
+    axs[1].grid(True)
+    axs[1].plot(time, y_gt, label='GT')
+    axs[1].plot(time[::args.n_skip], y_init, label='Initial')
+    axs[1].plot(time[::args.n_skip], y_est_imu, label='IMU')
+    axs[1].plot(time[::args.n_skip], y_est_full, label='VIO')
+    axs[1].set_xlabel('$t\ (s)$')
+    axs[1].set_xlabel('$y\ (m)$')
+
+    # Plot theta
+    axs[2].grid(True)
+    axs[2].plot(time, theta_gt, label='GT')
+    axs[2].plot(time[::args.n_skip], theta_init, label='Initial')
+    axs[2].plot(time[::args.n_skip], theta_est_imu, label='IMU')
+    axs[2].plot(time[::args.n_skip], theta_est_full, label='VIO')
+    axs[2].set_xlabel('$t\ (s)$')
+    axs[2].set_xlabel('$y\ (m)$')
     
 #   # Print vision_data matrix
 #   track_exists = np.zeros_like(vision_data[:,:,0])

@@ -88,7 +88,7 @@ class VisualInertialOdometryGraph(object):
             if i % n_skip == 0:
                 pose_key += 1
                 DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
-                                    gtsam.Point3(1 * np.random.randn(), 1 * np.random.randn(), 1 * np.random.randn()))
+                                    gtsam.Point3(4 * np.random.randn(), 4 * np.random.randn(), 4 * np.random.randn()))
                 self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
 
                 velocity_key += 1
@@ -134,12 +134,12 @@ class VisualInertialOdometryGraph(object):
       IMU_TO_CAM_POSE = gtsam.Pose3(imu_to_cam)
       print("IMU_TO_CAM_POSE", IMU_TO_CAM_POSE)
 
-      K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
-                       [0.000000e+00, 9.878386e+02, 2.455590e+02], 
-                       [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
-#     K_np = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02], 
-#                      [0.000000e+00, 7.215377e+02, 1.728540e+02], 
+#     K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
+#                      [0.000000e+00, 9.878386e+02, 2.455590e+02], 
 #                      [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
+      K_np = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02], 
+                       [0.000000e+00, 7.215377e+02, 1.728540e+02], 
+                       [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
 
       K = gtsam.Cal3_S2(K_np[0,0], K_np[1,1], 0., K_np[0,2], K_np[1,2])
       print("K_np = ", K_np)
@@ -221,7 +221,7 @@ class VisualInertialOdometryGraph(object):
                 key_point_initialized = True
       print('===============> Using ', count, ' tracks')
 
-    def estimate(self, SOLVER_PARAMS=None):
+    def estimate(self, SOLVER_PARAMS=None, marginals=False):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)
         self.result = self.optimizer.optimize()
 
@@ -229,7 +229,11 @@ class VisualInertialOdometryGraph(object):
 #           self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.result, SOLVER_PARAMS)
 #           self.result = self.optimizer.optimize()
 
-        return self.result
+        if marginals:
+            self.marginals = gtsam.Marginals(self.graph, self.result)
+            return self.result, self.marginals
+        else:
+            return self.result
 
 
 
