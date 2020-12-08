@@ -53,7 +53,6 @@ if __name__ == '__main__':
 
     # Number of frames
     n_frames = len(data.timestamps)
-    n_frames = 10
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -89,8 +88,8 @@ if __name__ == '__main__':
     # Inputs from list of default options in superpoint_demo.py.
     fe = sp.SuperPointFrontend(weights_path='src/SuperPointPretrainedNetwork/superpoint_v1.pth',
                             nms_dist=4,
-                            conf_thresh=0.615,
-                            nn_thresh=0.999,
+                            conf_thresh=0.215,
+                            nn_thresh=0.99,
                             cuda=False)
     print('==> Successfully loaded pre-trained network.')
 
@@ -133,7 +132,7 @@ if __name__ == '__main__':
 
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(init_guess_poses.copy(), measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data[:,0:10,:], init_guess_poses.copy(), args.n_skip,use_imu=True)
+    vio_full.add_keypoints(vision_data, init_guess_poses.copy(), args.n_skip,use_imu=True)
 
 
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
@@ -175,6 +174,7 @@ if __name__ == '__main__':
 
     x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+
 
 
     x_est_imu = np.array([result_imu.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 

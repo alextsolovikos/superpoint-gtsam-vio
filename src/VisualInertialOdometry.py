@@ -56,7 +56,7 @@ class VisualInertialOdometryGraph(object):
 
         # Pose prior
         pose_key = X(0)
-        pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0., 0., 0., 0., 0., 0.]))
+        pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.001, 0.001, 0.001]))
         pose_0 = gtsam.Pose3(measured_poses[0])
         self.graph.push_back(gtsam.PriorFactorPose3(pose_key, pose_0, pose_noise))
 
@@ -106,8 +106,9 @@ class VisualInertialOdometryGraph(object):
 
     def add_keypoints(self, vision_data, init_guess_poses, n_skip,use_imu=True):
       identity_pose = np.eye(4)
-      K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
-      K = gtsam.Cal3_S2(721.5377, 721.5377, 0.0, 609.5593,172.854 )
+      K_np = np.array([[984.2439, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+      K_np = np.array([[721.5377, 0., 609.5593],[0.,721.5377,172.854],[0.,0.,1.]])
+      K = gtsam.Cal3_S2(K_np[0,0],K_np[1,1], 0.0, K_np[0,2], K_np[1,2])
       R_rect = np.array([[9.999239e-01, 9.837760e-03, -7.445048e-03, 0.],
                          [ -9.869795e-03, 9.999421e-01, -4.278459e-03, 0.],
                          [ 7.402527e-03, 4.351614e-03, 9.999631e-01, 0.],
@@ -136,11 +137,9 @@ class VisualInertialOdometryGraph(object):
       print(cam_to_imu)
       print(K)
       #print(K[0,0])
-      K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
-      K_np = np.array([[721.5377, 0., 609.5593],[0.,721.5377,172.854],[0.,0.,1.]])
       inv_K = np.linalg.inv(K_np)
 
-      cam2imu_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0., 0., 0., 0., 0., 0.]))
+      cam2imu_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001]))
       #K = gtsam.Cal3_S2(calib_data)
       
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
@@ -154,6 +153,9 @@ class VisualInertialOdometryGraph(object):
       n_keypoints = 0
       print(vision_data.shape)
       print(init_guess_poses.shape)
+      print(np.max(vision_data))
+      print('IMU to Camera')
+      print(imu_to_cam)
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
         
@@ -163,38 +165,32 @@ class VisualInertialOdometryGraph(object):
           if i == 0:
             if not use_imu:
               if j == 0:
-                pose0_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0., 0., 0., 0., 0., 0.]))
+                pose0_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.001, 0.001, 0.001]))
                 self.graph.push_back(gtsam.PriorFactorPose3(X(0),
                   gtsam.Pose3(init_guess_poses[0]), pose0_noise))
               self.initial_estimate.insert(
                 X(j), gtsam.Pose3(init_guess_poses[j*n_skip]))
-            self.initial_estimate.insert(
-              X(j+vision_data.shape[1]), gtsam.Pose3(
-              init_guess_poses[j*n_skip]))
-            self.graph.push_back(gtsam.BetweenFactorPose3(
-              X(j+vision_data.shape[1]), X(j), gtsam.Pose3(
-              cam_to_imu), cam2imu_noise))
           if vision_data[i,j,0] >= 0:
             count += 1.
-        if count/float(vision_data.shape[1]) < .3 and count >= 1.9:
+        if count/float(vision_data.shape[1]) < 1.1 and count >= 1.9:
           n_keypoints += 1
 
           for j in range(vision_data.shape[1]):
             if vision_data[i,j,0] >= 0:
               self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
                 vision_data[i,j,:], measurement_noise,
-                X(j+vision_data.shape[1]), L(i), K))
+                X(j), L(i), K, gtsam.Pose3(imu_to_cam)))
               if not key_point_initialized:
-                initial_lj = 3.*inv_K@ np.array(
+                initial_lj = 5.*inv_K@ np.array(
                    [vision_data[i,j,0],vision_data[i,j,1],1])
-                initial_lj = np.array([[0.,0.,1.],[0.,1,0],[1,0,0]]).dot(initial_lj)
+                initial_lj = imu_to_cam.dot(np.hstack((initial_lj, [1.])))
              #   print(vision_data[i,j])
              #   print(initial_lj)
              #   #initial_lj = np.array([5.,0.,0.])
-                initial_lj = (init_guess_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
+                initial_lj = (init_guess_poses[j*n_skip])@ initial_lj 
                 plt.scatter(initial_lj[0],initial_lj[1])
              #   print(i,j)
-                print(initial_lj)
+             #   print(initial_lj)
              #   print(init_guess_poses[j*n_skip])
              #   #print(inv_K@np.array([0,100,1]))
              #   #print(inv_K@np.array([1350,100,1]))
