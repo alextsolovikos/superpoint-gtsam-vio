@@ -39,6 +39,79 @@ def get_vision_data(tracker):
     return vision_data
 
 
+def estimate_poses(vision_data):
+   R_rect = np.array([[9.999239e-01, 9.837760e-03, -7.445048e-03, 0.],
+                      [ -9.869795e-03, 9.999421e-01, -4.278459e-03, 0.],
+                      [ 7.402527e-03, 4.351614e-03, 9.999631e-01, 0.],
+                      [ 0., 0., 0., 1.]])
+   R_cam_velo = np.array([[7.533745e-03, -9.999714e-01, -6.166020e-04],
+                          [ 1.480249e-02, 7.280733e-04, -9.998902e-01],
+                          [ 9.998621e-01, 7.523790e-03, 1.480755e-02]])
+   R_velo_imu = np.array([[9.999976e-01, 7.553071e-04, -2.035826e-03],
+                          [-7.854027e-04, 9.998898e-01, -1.482298e-02],
+                          [2.024406e-03, 1.482454e-02, 9.998881e-01]])
+   t_cam_velo = np.array([-4.069766e-03, -7.631618e-02, -2.717806e-01])
+   t_velo_imu = np.array([-8.086759e-01, 3.195559e-01, -7.997231e-01])
+   T_velo_imu = np.zeros((4,4))
+   T_cam_velo = np.zeros((4,4))
+   T_velo_imu[3,3] = 1.
+   T_cam_velo[3,3] = 1.
+   T_velo_imu[:3,:3] = R_velo_imu
+   T_velo_imu[:3,3] = t_velo_imu
+   T_cam_velo[:3,:3] = R_cam_velo
+   T_cam_velo[:3,3] = t_cam_velo
+   cam_to_imu = R_rect @ T_cam_velo @ T_velo_imu
+   imu_to_cam = np.linalg.inv(cam_to_imu)
+
+   # Estimate list of flu poses using vision data
+   s = 10. # scale translations to kind of match GT plot
+   A = np.array([(721.5377, 0., 609.5593), (0., 721.5377, 172.8540), (0., 0., 1.)])
+   K = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+   poses = [np.identity(4)] 
+   N = vision_data.shape[1]
+   print(N)
+   for j in range(1, N):
+     pts1 = np.zeros((1,2))
+     pts2 = np.zeros((1,2))
+     for i in range(vision_data.shape[0]):
+         # Collect all point matches between images j-1 and j
+         if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
+            pts1 = np.vstack((pts1, vision_data[i, j-1]))
+            pts2 = np.vstack((pts2, vision_data[i, j]))
+     pts1 = np.delete(pts1, 0, 0)
+     pts2 = np.delete(pts2, 0, 0)
+     pts1 = pts1.astype(float)
+     pts2 = pts2.astype(float)
+     if pts1.shape[0] > 1:
+       E, _ = cv2.findEssentialMat(pts2, pts1, K)
+       _, R, t, _ = cv2.recoverPose(E, pts2, pts1, K)
+       t = s * t
+       rel_pose = np.vstack((np.hstack((R,t)), np.array([0., 0., 0., 1.])))
+     else:
+       print('Found no matches!') 
+       rel_pose = np.identity(4)
+     poses.append(poses[j - 1] @ rel_pose)  
+   
+   # Transform from cam to flu 
+   T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
+   flu_poses = np.array([T_cf @ p for p in poses])
+#  flu_poses = np.array([imu_to_cam @ p for p in poses])
+
+
+   # Place into gtsam objects
+   # print('Converting poses to gtsam objects...')
+   # gtsam_poses = np.array([gtsam.Pose3(p) for p in flu_poses])
+   # for p in flu_poses:
+      # print(p[:3,1])
+      # R_g = gtsam.Rot3(gtsam.Point3(p[:3,0]), gtsam.Point3(p[:3,1]), gtsam.Point3(p[:3,2]))
+      # print(R_g)
+      # t_g = gtsam.Point3(p[3,:3])
+      # print(t_g)
+      # gtsam_poses.append(gtsam.Pose3(R_g, t_g))
+      
+   return flu_poses
+
+
 if __name__ == '__main__':
     # For testing, use the following command in superpoint-gtsam-vio/src:
     #    python3 main.py --basedir data --date '2011_09_26' --drive '0005' --n_skip 10
@@ -127,7 +200,13 @@ if __name__ == '__main__':
 
     print('==> Extracting keypoint tracks')
     vision_data = get_vision_data(tracker);
-    print(vision_data.shape)
+
+
+    """
+    Estimate initialization of poses from vision only
+    """
+    cv_poses = estimate_poses(vision_data)
+#   cv_poses = np.linalg.inv(cv_poses[0]) @ cv_poses
 
 
     """
@@ -162,9 +241,9 @@ if __name__ == '__main__':
 
     print('==> Solving IMU-only graph')
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    imu_only.add_imu_measurements(cv_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+#   imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     result_imu = imu_only.estimate(params)
-#   result_imu, marginals_full = imu_only.estimate(SOLVER_PARAMS=params, marginals=True)
 
 
 
@@ -186,10 +265,10 @@ if __name__ == '__main__':
 
     print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    print('measured_poses.shape: ', measured_poses.shape)
-    print('args.n_skip ', args.n_skip)
-    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
+    vio_full.add_imu_measurements(cv_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    vio_full.add_keypoints(vision_data, cv_poses, args.n_skip, depth, axs)
+#   vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+#   vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
 
     result_full = vio_full.estimate(SOLVER_PARAMS=params)
 #   result_full, marginals_full = vio_full.estimate(SOLVER_PARAMS=params, marginals=True)
@@ -205,6 +284,8 @@ if __name__ == '__main__':
     y_gt = measured_poses[:,1,3]
     theta_gt = np.array([get_theta(measured_poses[k,:3,:3])[2] for k in range(n_frames)])
 
+#   x_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+#   y_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
     x_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
     theta_init = np.array([get_theta(vio_full.initial_estimate.atPose3(X(k)).rotation().matrix())[2] for k in range(n_frames//args.n_skip)]) 

@@ -47,18 +47,20 @@ class VisualInertialOdometryGraph(object):
 
     def add_imu_measurements(self, measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip, initial_poses=None):
 
-        n_frames = measured_poses.shape[0]
+        n_frames = measured_acc.shape[0]
+#       n_frames = measured_poses.shape[0]
 
 
         # Check if sizes are correct
-        assert measured_poses.shape[0] == n_frames
-        assert measured_acc.shape[0] == n_frames
-        assert measured_vel.shape[0] == n_frames
+#       assert measured_poses.shape[0] == n_frames
+#       assert measured_acc.shape[0] == n_frames
+#       assert measured_vel.shape[0] == n_frames
 
         # Pose prior
         pose_key = X(0)
         pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.2, 0.2, 0.2, 0.2, 0.2, 0.2]))
-        pose_0 = gtsam.Pose3(measured_poses[0])
+#       pose_0 = gtsam.Pose3(measured_poses[0])
+        pose_0 = gtsam.Pose3(np.eye(4))
         self.graph.push_back(gtsam.PriorFactorPose3(pose_key, pose_0, pose_noise))
 
         self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[0]))
@@ -87,9 +89,12 @@ class VisualInertialOdometryGraph(object):
             accum.integrateMeasurement(measured_acc[i], measured_omega[i], delta_t[i-1])
             if i % n_skip == 0:
                 pose_key += 1
-                DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
-                                    gtsam.Point3(4 * np.random.randn(), 4 * np.random.randn(), 4 * np.random.randn()))
-                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
+                """ Using GT + noise as initialization """
+#               DELTA = gtsam.Pose3(gtsam.Rot3.Rodrigues(0, 0, 0.1 * np.random.randn()),
+#                                   gtsam.Point3(4 * np.random.randn(), 4 * np.random.randn(), 4 * np.random.randn()))
+#               self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]).compose(DELTA))
+                """ Using cv pose estimate """
+                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i // n_skip]))
 
                 velocity_key += 1
                 self.initial_estimate.insert(velocity_key, measured_vel[i])
@@ -210,10 +215,8 @@ class VisualInertialOdometryGraph(object):
                 print(xp, yp, zp)
 
                 # Convert to global
-#               Xg = measured_poses[j*n_skip] @ np.array([zp, -xp, -yp, 1])
-                Xg = measured_poses[j*n_skip] @ imu_to_cam @ np.array([xp, yp, zp, 1])
-#               Xg = measured_poses[j*n_skip] @ cam_to_imu @ np.array([xp, yp, zp, 1])
-#               Xg = measured_poses[j*n_skip] @ np.array([xp, yp, zp, 1])
+#               Xg = measured_poses[j*n_skip] @ imu_to_cam @ np.array([xp, yp, zp, 1])
+                Xg = measured_poses[j] @ imu_to_cam @ np.array([xp, yp, zp, 1])
                 print(Xg)
                 axs.scatter(Xg[0], Xg[1], s=10)
                 self.initial_estimate.insert(L(i), Xg[:3])
