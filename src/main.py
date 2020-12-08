@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
     # Number of frames
 #   n_frames = len(data.timestamps)
-    n_frames = 141
+    n_frames = 301
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     """
     Load depth data
     """
-    depth_data_path = os.path.join(args.basedir, args.date, '2011_09_26_drive_0005_sync/proj_depth/groundtruth/image_02')
+    depth_data_path = os.path.join(args.basedir, args.date, '2011_09_26_drive_' + args.drive + '_sync/proj_depth/groundtruth/image_02')
     depth = []
 
     # Load in the images
@@ -163,14 +163,14 @@ if __name__ == '__main__':
     Solve VIO graph
     """
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(20000)
-    params.setlambdaUpperBound(1.e+6)
+    params.setMaxIterations(5000)
+    params.setlambdaUpperBound(1.e+8)
     params.setlambdaLowerBound(10)
-    params.setDiagonalDamping(10000)
+    params.setDiagonalDamping(100000)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
-    params.setRelativeErrorTol(1.e-8)
-    params.setAbsoluteErrorTol(1.e-8)
+    params.setRelativeErrorTol(1.e-9)
+    params.setAbsoluteErrorTol(1.e-9)
 #   params.setVerbosity('SUMMARY')
 
 
@@ -194,17 +194,21 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
+    x_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
+    y_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+
     x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
-
 
     x_est_imu = np.array([result_imu.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_imu = np.array([result_imu.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
 
     axs.plot(x_gt, y_gt, color='k', label='GT')
+    axs.plot(x_init, y_init, 'x-', color='m', label='Initial')
     axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
     axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')
     axs.set_aspect('equal', 'box')
+    plt.grid(True)
 
     plt.legend()
     plt.show()
