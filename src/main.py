@@ -5,6 +5,7 @@ import argparse
 import SuperPointPretrainedNetwork.demo_superpoint as sp
 import cv2
 import os
+from scipy.spatial.transform import Rotation as R
 
 import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
@@ -12,6 +13,9 @@ from gtsam.symbol_shorthand import B, V, X, L
 import matplotlib.pyplot as plt
 plt.rc('text', usetex=True)
 plt.rc('font', size=16)
+
+def get_theta(rotation):
+    return R.from_matrix(rotation).as_euler('xyz')
 
 def get_vision_data(tracker):
     """ Get keypoint-data pairs from the tracks. 
@@ -45,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_skip', dest='n_skip', type=int, default=1)
     args = parser.parse_args()
 
-    fig, axs = plt.subplots(1, figsize=(12, 6), facecolor='w', edgecolor='k')
+    fig, axs = plt.subplots(1, figsize=(12, 8), facecolor='w', edgecolor='k')
     plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
 
     """ 
@@ -56,7 +60,7 @@ if __name__ == '__main__':
 
     # Number of frames
 #   n_frames = len(data.timestamps)
-    n_frames = 501
+    n_frames = 701
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
@@ -195,57 +199,99 @@ if __name__ == '__main__':
 
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
-    y_gt = measured_poses[:,1,3]
+    theta_gt = np.array([get_theta(measured_poses[k,:3,:3])[2] for k in range(n_frames)])
 
     x_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_init = np.array([vio_full.initial_estimate.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+    theta_init = np.array([get_theta(vio_full.initial_estimate.atPose3(X(k)).rotation().matrix())[2] for k in range(n_frames//args.n_skip)]) 
 
     x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+    theta_est_full = np.array([get_theta(result_full.atPose3(X(k)).rotation().matrix())[2] for k in range(n_frames//args.n_skip)]) 
 
     x_est_imu = np.array([result_imu.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_imu = np.array([result_imu.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
+    theta_est_imu = np.array([get_theta(result_imu.atPose3(X(k)).rotation().matrix())[2] for k in range(n_frames//args.n_skip)]) 
 
     axs.plot(x_gt, y_gt, color='k', label='GT')
     axs.plot(x_init, y_init, 'x-', color='m', label='Initial')
     axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')
     axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
+    axs.set_xlabel('$x\ (m)$')
+    axs.set_ylabel('$y\ (m)$')
     axs.set_aspect('equal', 'box')
     plt.grid(True)
 
+#   plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.legend()
+    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/path.eps')
     plt.show()
 
     # Plot pose as time series
-    fig, axs = plt.subplots(3, figsize=(12, 6), facecolor='w', edgecolor='k')
-    plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
+    fig, axs = plt.subplots(3, figsize=(8, 8), facecolor='w', edgecolor='k')
+    plt.subplots_adjust(right=0.95, left=0.15, bottom=0.17, hspace=0.5)
     # Plot x
     axs[0].grid(True)
-    axs[0].plot(time, x_gt, label='GT')
-    axs[0].plot(time[::args.n_skip], x_init, label='Initial')
-    axs[0].plot(time[::args.n_skip], x_est_imu, label='IMU')
-    axs[0].plot(time[::args.n_skip], x_est_full, label='VIO')
+    axs[0].plot(time, x_gt, color='k', label='GT')
+    axs[0].plot(time[:n_frames-1:args.n_skip], x_init, color='m', label='Initial')
+    axs[0].plot(time[:n_frames-1:args.n_skip], x_est_imu, color='r', label='IMU')
+    axs[0].plot(time[:n_frames-1:args.n_skip], x_est_full, color='b', label='VIO')
     axs[0].set_xlabel('$t\ (s)$')
-    axs[0].set_xlabel('$x\ (m)$')
+    axs[0].set_ylabel('$x\ (m)$')
 
     # Plot y
     axs[1].grid(True)
-    axs[1].plot(time, y_gt, label='GT')
-    axs[1].plot(time[::args.n_skip], y_init, label='Initial')
-    axs[1].plot(time[::args.n_skip], y_est_imu, label='IMU')
-    axs[1].plot(time[::args.n_skip], y_est_full, label='VIO')
+    axs[1].plot(time, y_gt, color='k', label='GT')
+    axs[1].plot(time[:n_frames-1:args.n_skip], y_init, color='m', label='Initial')
+    axs[1].plot(time[:n_frames-1:args.n_skip], y_est_imu, color='r', label='IMU')
+    axs[1].plot(time[:n_frames-1:args.n_skip], y_est_full, color='b', label='VIO')
     axs[1].set_xlabel('$t\ (s)$')
-    axs[1].set_xlabel('$y\ (m)$')
+    axs[1].set_ylabel('$y\ (m)$')
 
     # Plot theta
     axs[2].grid(True)
-    axs[2].plot(time, theta_gt, label='GT')
-    axs[2].plot(time[::args.n_skip], theta_init, label='Initial')
-    axs[2].plot(time[::args.n_skip], theta_est_imu, label='IMU')
-    axs[2].plot(time[::args.n_skip], theta_est_full, label='VIO')
+    axs[2].plot(time, theta_gt, color='k', label='GT')
+    axs[2].plot(time[:n_frames-1:args.n_skip], theta_init, color='m', label='Initial')
+    axs[2].plot(time[:n_frames-1:args.n_skip], theta_est_imu, color='r', label='IMU')
+    axs[2].plot(time[:n_frames-1:args.n_skip], theta_est_full, color='b', label='VIO')
     axs[2].set_xlabel('$t\ (s)$')
-    axs[2].set_xlabel('$y\ (m)$')
+    axs[2].set_ylabel('$\\theta\ (rad)$')
     
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/poses.eps')
+    plt.show()
+
+    # Plot pose as time series
+    fig, axs = plt.subplots(3, figsize=(8, 8), facecolor='w', edgecolor='k')
+    plt.subplots_adjust(right=0.95, left=0.15, bottom=0.17, hspace=0.5)
+    # Plot x
+    axs[0].grid(True)
+    axs[0].plot(time[:n_frames-1:args.n_skip], np.abs(x_gt[:n_frames-1:args.n_skip] - x_init), color='m', label='Initial')
+    axs[0].plot(time[:n_frames-1:args.n_skip], np.abs(x_gt[:n_frames-1:args.n_skip] - x_est_imu), color='r', label='IMU')
+    axs[0].plot(time[:n_frames-1:args.n_skip], np.abs(x_gt[:n_frames-1:args.n_skip] - x_est_full), color='b', label='VIO')
+    axs[0].set_xlabel('$t\ (s)$')
+    axs[0].set_ylabel('$e_x\ (m)$')
+
+    # Plot y
+    axs[1].grid(True)
+    axs[1].plot(time[:n_frames-1:args.n_skip], np.abs(y_gt[:n_frames-1:args.n_skip] - y_init), color='m', label='Initial')
+    axs[1].plot(time[:n_frames-1:args.n_skip], np.abs(y_gt[:n_frames-1:args.n_skip] - y_est_imu), color='r', label='IMU')
+    axs[1].plot(time[:n_frames-1:args.n_skip], np.abs(y_gt[:n_frames-1:args.n_skip] - y_est_full), color='b', label='VIO')
+    axs[1].set_xlabel('$t\ (s)$')
+    axs[1].set_ylabel('$e_y\ (m)$')
+
+    # Plot theta
+    axs[2].grid(True)
+    axs[2].plot(time[:n_frames-1:args.n_skip], np.abs(theta_gt[:n_frames-1:args.n_skip] - theta_init), color='m', label='Initial')
+    axs[2].plot(time[:n_frames-1:args.n_skip], np.abs(theta_gt[:n_frames-1:args.n_skip] - theta_est_imu), color='r', label='IMU')
+    axs[2].plot(time[:n_frames-1:args.n_skip], np.abs(theta_gt[:n_frames-1:args.n_skip] - theta_est_full), color='b', label='VIO')
+    axs[2].set_xlabel('$t\ (s)$')
+    axs[2].set_ylabel('$e_{\theta}\ (rad)$')
+    
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/errors.eps')
+    plt.show()
+
 #   # Print vision_data matrix
 #   track_exists = np.zeros_like(vision_data[:,:,0])
 #   track_exists[track_exists != -1] = 1
