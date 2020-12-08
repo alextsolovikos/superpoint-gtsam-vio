@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--date', dest='date', type=str)
     parser.add_argument('--drive', dest='drive', type=str)
     parser.add_argument('--n_skip', dest='n_skip', type=int, default=1)
+    parser.add_argument('--n_frames', dest='n_frames', type=int, default=None)
     args = parser.parse_args()
 
     fig, axs = plt.subplots(1, figsize=(12, 8), facecolor='w', edgecolor='k')
@@ -59,8 +60,11 @@ if __name__ == '__main__':
     data = pykitti.raw(args.basedir, args.date, args.drive)
 
     # Number of frames
-#   n_frames = len(data.timestamps)
-    n_frames = 701
+#   n_frames = 
+    if args.n_frames is None:
+        n_frames = len(data.timestamps)
+    else:
+        n_frames = args.n_frames
 
     # Time in seconds
     time = np.array([(data.timestamps[k] - data.timestamps[0]).total_seconds() for k in range(n_frames)])
