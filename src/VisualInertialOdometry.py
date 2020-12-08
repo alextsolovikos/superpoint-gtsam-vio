@@ -9,30 +9,11 @@ Authors: Kristen Michaelson, Alex Tsolovikos, Enrico Zucchelli
 Description: This is a class that implements a GTSAM factor graph for Visual Inertial Odometry (VIO)
 """
 
-
-
-
-
 import numpy as np
 import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
 import matplotlib.pyplot as plt
 np.random.seed(0)
-
-"""
-USEFUL CLASSES
-    gtsam.PreintegratedImuMeasurements
-    gtsam.imuBias.*
-    gtsam.noiseModel.Diagonal.Sigmas()
-    gtsam.GenericProjectionFactorCal3_S2()
-    gtsam.noiseModel.Isotropic.Sigma()
-    from gtsam.symbol_shorthand import X, L: we can use X for the poses and L for the keypoints
-
-
-    
-
-
-"""
 
 class VisualInertialOdometryGraph(object):
     
@@ -48,7 +29,6 @@ class VisualInertialOdometryGraph(object):
     def add_imu_measurements(self, measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip, initial_poses=None):
 
         n_frames = measured_poses.shape[0]
-
 
         # Check if sizes are correct
         assert measured_poses.shape[0] == n_frames
@@ -78,7 +58,6 @@ class VisualInertialOdometryGraph(object):
 
         self.initial_estimate.insert(velocity_key, velocity_0)
         
-
         # Preintegrator
         accum = gtsam.PreintegratedImuMeasurements(self.IMU_PARAMS)
 
@@ -103,9 +82,6 @@ class VisualInertialOdometryGraph(object):
 
                 # Reset preintegration
                 accum.resetIntegration()
-
-
-        # do stuff
 
     def add_keypoints(self,vision_data,measured_poses,n_skip, depth, axs):
       R_rect = np.array([[9.999239e-01, 9.837760e-03, -7.445048e-03, 0.],
@@ -132,18 +108,12 @@ class VisualInertialOdometryGraph(object):
       CAM_TO_IMU_POSE = gtsam.Pose3(cam_to_imu)
       imu_to_cam = np.linalg.inv(cam_to_imu)
       IMU_TO_CAM_POSE = gtsam.Pose3(imu_to_cam)
-      print("IMU_TO_CAM_POSE", IMU_TO_CAM_POSE)
 
       K_np = np.array([[9.895267e+02, 0.000000e+00, 7.020000e+02], 
                        [0.000000e+00, 9.878386e+02, 2.455590e+02], 
                        [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
-#     K_np = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02], 
-#                      [0.000000e+00, 7.215377e+02, 1.728540e+02], 
-#                      [0.000000e+00, 0.000000e+00, 1.000000e+00]]) 
 
       K = gtsam.Cal3_S2(K_np[0,0], K_np[1,1], 0., K_np[0,2], K_np[1,2])
-      print("K_np = ", K_np)
-
 
       valid_track = np.zeros(vision_data.shape[0], dtype=bool)
       N = vision_data.shape[1]
@@ -151,9 +121,6 @@ class VisualInertialOdometryGraph(object):
           track_length = N - np.sum(vision_data[i,:,0] == -1)
           if track_length > 1 and track_length < 0.5*N:
               valid_track[i] = True
-      print('valid tracks: ')
-      print(valid_track)
-
 
       count = 0
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(2, 10.0) 
@@ -170,84 +137,30 @@ class VisualInertialOdometryGraph(object):
               vision_data[i,j,:], measurement_noise, X(j), L(i), K, IMU_TO_CAM_POSE))
             if not key_point_initialized:
                 count += 1
-                """
-                Method 1
-                """
-#             initial_lj = inv_K @ np.array([vision_data[i,j,0],vision_data[i,j,1], 1])
-#             # Rotate axes
-#             initial_lj = np.array([initial_lj[2], -initial_lj[0], -initial_lj[1]]) + np.array([10.,0,0])
-#             # Convert to global
-#             initial_lj = measured_poses[j*n_skip] @ np.hstack((initial_lj, [1.]))
-#             print(initial_lj)
-#             self.initial_estimate.insert(L(i), initial_lj[:3])
-                """
-                Method 2
-                """
-#                X1 = inv_K @ np.array([vision_data[i,j,0],vision_data[i,j,1], 1])
-#                X1 = np.array([X1[2], -X1[0], -X1[1], 1])
-#                X2 = inv_K @ np.array([vision_data[i,j+1,0],vision_data[i,j+1,1], 1])
-#                X2 = np.array([X2[2], -X2[0], -X2[1], 1])
-#                Xg = np.linalg.pinv(np.vstack((measured_poses[j*n_skip], 
-#                                               measured_poses[(j+1)*n_skip]))) 
-#                print('Xg.shape = ', Xg.shape)
-#                Xg = Xg @ np.hstack((X1, X2))
-#                print('Xg.shape = ', Xg.shape)
-#                self.initial_estimate.insert(L(i), Xg[:3])
-                """
-                Method 3
-                """
+
+                # Initialize landmark 3D coordinates
                 fx = K_np[0,0]
                 fy = K_np[1,1]
                 cx = K_np[0,2]
                 cy = K_np[1,2]
 
                 # Depth:
-#               zp = 10. + 0.5 * np.random.randn() # m
-#               zp = 5 
                 zp = float(depth[j * n_skip][vision_data[i,j,1], vision_data[i,j,0], 2])
                 xp = float(vision_data[i,j,0] - cx) / fx * zp
                 yp = float(vision_data[i,j,1] - cy) / fy * zp
-                print(xp, yp, zp)
 
                 # Convert to global
-#               Xg = measured_poses[j*n_skip] @ np.array([zp, -xp, -yp, 1])
                 Xg = measured_poses[j*n_skip] @ imu_to_cam @ np.array([xp, yp, zp, 1])
-#               Xg = measured_poses[j*n_skip] @ cam_to_imu @ np.array([xp, yp, zp, 1])
-#               Xg = measured_poses[j*n_skip] @ np.array([xp, yp, zp, 1])
-                print(Xg)
                 axs.scatter(Xg[0], Xg[1], s=10)
                 self.initial_estimate.insert(L(i), Xg[:3])
                 
                 key_point_initialized = True
-      print('===============> Using ', count, ' tracks')
 
-    def estimate(self, SOLVER_PARAMS=None, marginals=False):
+      print('==> Using ', count, ' tracks')
+
+    def estimate(self, SOLVER_PARAMS=None):
         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_estimate, SOLVER_PARAMS)
         self.result = self.optimizer.optimize()
 
-#       for i in range(20):
-#           self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.result, SOLVER_PARAMS)
-#           self.result = self.optimizer.optimize()
-
-        if marginals:
-            self.marginals = gtsam.Marginals(self.graph, self.result)
-            return self.result, self.marginals
-        else:
-            return self.result
-
-
-
-        
-
-
-
-
-
-
-
-
-
-
-
-
+        return self.result
 

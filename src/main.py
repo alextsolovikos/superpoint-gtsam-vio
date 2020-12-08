@@ -11,7 +11,7 @@ import gtsam
 from gtsam.symbol_shorthand import B, V, X, L
 
 import matplotlib.pyplot as plt
-plt.rc('text', usetex=True)
+#plt.rc('text', usetex=True)
 plt.rc('font', size=16)
 
 def get_theta(rotation):
@@ -27,7 +27,6 @@ def get_vision_data(tracker):
     offsets = tracker.get_offsets()
     # Iterate through each track and get the data from the current image.
     vision_data = -1 * np.ones((tracker.tracks.shape[0], N, 2), dtype=int)
-    print('Size of vision_data: ', vision_data.shape)
     for j, track in enumerate(tracker.tracks):
       for i in range(N-1):
         if track[i+3] == -1: # track[i+2] == -1 or 
@@ -119,7 +118,6 @@ if __name__ == '__main__':
     print('==> Running SuperPoint')
     idx = range(0, n_frames, args.n_skip);
     for i in idx:
-        print(i)
         img = data.get_cam1(i) # only get image from cam0
         img_np = np.array(img).astype('float32') / 255.0;
         pts, desc, _ = fe.run(img_np)
@@ -127,7 +125,6 @@ if __name__ == '__main__':
 
     print('==> Extracting keypoint tracks')
     vision_data = get_vision_data(tracker);
-    print(vision_data.shape)
 
 
     """
@@ -144,29 +141,21 @@ if __name__ == '__main__':
     IMU_PARAMS.setAccelerometerCovariance(I * 0.2)
     IMU_PARAMS.setGyroscopeCovariance(I * 0.2)
     IMU_PARAMS.setIntegrationCovariance(I * 0.2)
-#   IMU_PARAMS.setUse2ndOrderCoriolis(False)
-#   IMU_PARAMS.setOmegaCoriolis(np.array([0, 0, 0]))
 
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
-
 
     """
     Solve IMU-only graph
     """
     params = gtsam.LevenbergMarquardtParams()
     params.setMaxIterations(1000)
-#   params.setDiagonalDamping(10)
     params.setVerbosity('ERROR')
     params.setVerbosityLM('SUMMARY')
-#   params.setVerbosity('SUMMARY')
 
     print('==> Solving IMU-only graph')
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
     result_imu = imu_only.estimate(params)
-#   result_imu, marginals_full = imu_only.estimate(SOLVER_PARAMS=params, marginals=True)
-
-
 
     """
     Solve VIO graph
@@ -180,21 +169,13 @@ if __name__ == '__main__':
     params.setVerbosityLM('SUMMARY')
     params.setRelativeErrorTol(1.e-9)
     params.setAbsoluteErrorTol(1.e-9)
-#   params.setVerbosity('SUMMARY')
-
-
 
     print('==> Solving VIO graph')
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
     vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    print('measured_poses.shape: ', measured_poses.shape)
-    print('args.n_skip ', args.n_skip)
     vio_full.add_keypoints(vision_data, measured_poses, args.n_skip, depth, axs)
 
     result_full = vio_full.estimate(SOLVER_PARAMS=params)
-#   result_full, marginals_full = vio_full.estimate(SOLVER_PARAMS=params, marginals=True)
-
-
 
     """
     Visualize results
@@ -226,14 +207,13 @@ if __name__ == '__main__':
     axs.set_aspect('equal', 'box')
     plt.grid(True)
 
-#   plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.legend()
-    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/path.eps')
-    plt.show()
+    plt.savefig('path.eps')
 
     # Plot pose as time series
     fig, axs = plt.subplots(3, figsize=(8, 8), facecolor='w', edgecolor='k')
     plt.subplots_adjust(right=0.95, left=0.15, bottom=0.17, hspace=0.5)
+
     # Plot x
     axs[0].grid(True)
     axs[0].plot(time, x_gt, color='k', label='GT')
@@ -262,8 +242,7 @@ if __name__ == '__main__':
     axs[2].set_ylabel('$\\theta\ (rad)$')
     
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/poses.eps')
-    plt.show()
+    plt.savefig('poses.eps')
 
     # Plot pose as time series
     fig, axs = plt.subplots(3, figsize=(8, 8), facecolor='w', edgecolor='k')
@@ -290,32 +269,12 @@ if __name__ == '__main__':
     axs[2].plot(time[:n_frames-1:args.n_skip], np.abs(theta_gt[:n_frames-1:args.n_skip] - theta_est_imu), color='r', label='IMU')
     axs[2].plot(time[:n_frames-1:args.n_skip], np.abs(theta_gt[:n_frames-1:args.n_skip] - theta_est_full), color='b', label='VIO')
     axs[2].set_xlabel('$t\ (s)$')
-    axs[2].set_ylabel('$e_{\theta}\ (rad)$')
+    axs[2].set_ylabel('$e_{\\theta}\ (rad)$')
     
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.savefig('/Users/atsol/autonomous_robots/projects/final_project/errors.eps')
+    plt.savefig('errors.eps')
+
     plt.show()
-
-#   # Print vision_data matrix
-#   track_exists = np.zeros_like(vision_data[:,:,0])
-#   track_exists[track_exists != -1] = 1
-#   plt.imshow(track_exists, aspect='auto')
-#   plt.show()
-    
-
-
-    # Compare xyz with flu frame measurements
-#   fig, axs = plt.subplots(3, figsize=(10, 3.5), facecolor='w', edgecolor='k')
-#   plt.subplots_adjust(right=0.95, left=0.1, bottom=0.17)
-
-#   axs[0].plot(time, measured_acc[:,0], color='k')
-#   axs[0].plot(time, measured_acc_2[:,0], color='b')
-#   axs[1].plot(time, measured_acc[:,1], color='k')
-#   axs[1].plot(time, measured_acc_2[:,1], color='b')
-#   axs[2].plot(time, measured_acc[:,2], color='k')
-#   axs[2].plot(time, measured_acc_2[:,2], color='b')
-
-#   plt.show()
 
 
 
