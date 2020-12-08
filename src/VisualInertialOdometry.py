@@ -47,11 +47,11 @@ class VisualInertialOdometryGraph(object):
 
     def add_imu_measurements(self, measured_poses, measured_acc, measured_omega, measured_vel, delta_t, n_skip):
 
-        n_frames = measured_poses.shape[0]
+        n_frames = measured_acc.shape[0]
 
         # Check if sizes are correct
-        assert measured_poses.shape[0] == n_frames
-        assert measured_acc.shape[0] == n_frames
+        # assert measured_poses.shape[0] == n_frames
+        # assert measured_acc.shape[0] == n_frames
         assert measured_vel.shape[0] == n_frames
 
         # Pose prior
@@ -86,7 +86,7 @@ class VisualInertialOdometryGraph(object):
             accum.integrateMeasurement(measured_acc[i], measured_omega[i], delta_t[i-1])
             if i % n_skip == 0:
                 pose_key += 1
-                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i]))
+                self.initial_estimate.insert(pose_key, gtsam.Pose3(measured_poses[i // n_skip]))
 
                 velocity_key += 1
                 self.initial_estimate.insert(velocity_key, measured_vel[i])
@@ -131,19 +131,34 @@ class VisualInertialOdometryGraph(object):
          else:
            print('Found no matches!') 
            rel_pose = np.identity(4)
-         poses.append(poses[j - 1] @ rel_pose)
+         poses.append(poses[j - 1] @ rel_pose)  
+       
+       # Transform from cam to flu 
+       T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
+       flu_poses = [T_cf @ p for p in poses]
+
        return poses
 
+    """
     def estimate_flu_poses(self, cam_poses): 
        # Transform from cam to flu 
        T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
        flu_poses = [T_cf @ cp for cp in cam_poses]
        return flu_poses
+    """
 
     def add_keypoints(self,vision_data,measured_poses,n_skip):
+      print('Adding keypoints...')
       K = gtsam.Cal3_S2(984.2439, 980.8141, 0.0, 690.0, 233.1966)
+      A = gtsam.Cal3_S2(721.5377, 721.5377, 0.0, 609.5593, 172.8540)
+      # T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
+      # T_cf = gtsam.Pose3(gtsam.Rot3(0., 0., 1., -1., 0., 0., 0., -1., 0.),
+      #                   gtsam.Point3(0., 0., 0.))
+      T_cf = gtsam.Pose3(gtsam.Rot3(0., -1., 0., 0., 0., -1., 1., 0., 0.),
+                         gtsam.Point3(0., 0., 0.))
       print(K)
       #print(K[0,0])
+      A_np = np.array([(721.5377, 0., 609.5593), (0., 721.5377, 172.8540), (0., 0., 1.)])
       K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
       inv_K = np.linalg.inv(K_np)
 
@@ -151,24 +166,26 @@ class VisualInertialOdometryGraph(object):
       offset_pose_key = X(0)
       
       measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
-        2, 10.0)  # one pixel in u and v
+        2, 2.0)  # 2 pixel in u and v
       # measurement_noise = gtsam.noiseModel.Isotropic.Sigma(
       #   noise_data)
-      estimated_poses = self.estimate_poses(vision_data)
+      # estimated_poses = self.estimate_flu_poses(self.estimate_poses(vision_data)) # lazy
       for i in range(vision_data.shape[0]):
         key_point_initialized=False 
-        
+                
 
         for j in range(vision_data.shape[1]):
           if vision_data[i,j,0] >= 0:
             self.graph.push_back(gtsam.GenericProjectionFactorCal3_S2(
-              vision_data[i,j,:], measurement_noise, X(j), L(i), K))
+              vision_data[i,j,:], measurement_noise, X(j), L(i), A, T_cf))
             if not key_point_initialized:
               # initial_lj = 5.*inv_K@ np.array(
               #   [vision_data[i,j,0],vision_data[i,j,1],1])
-              initial_lj = estimated_poses[j] @ np.array([5.,0.,0.,1.])
+              initial_lj = measured_poses[j] @ np.array([0., 0., 5., 1])
               # initial_lj = (measured_poses[j*n_skip])@ np.hstack((initial_lj, [1.]))
-              self.initial_estimate.insert(L(i), initial_lj[0:3])
+              self.initial_estimate.insert(L(i), initial_lj[:3])
+              print(initial_lj[:3])
+              # self.initial_estimate.insert(L(i), estimated_poses[j][0:3,3]) # inside the camera
               key_point_initialized = True
 
       #print(self.initial_estimate)

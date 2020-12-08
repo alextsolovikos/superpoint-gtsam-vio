@@ -34,6 +34,54 @@ def get_vision_data(tracker):
     return vision_data
 
 
+def estimate_poses(vision_data):
+   # Estimate list of flu poses using vision data
+   s = 5. # scale translations to kind of match GT plot
+   A = np.array([(721.5377, 0., 609.5593), (0., 721.5377, 172.8540), (0., 0., 1.)])
+   K = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
+   poses = [np.identity(4)] 
+   N = vision_data.shape[1]
+   print(N)
+   for j in range(1, N):
+     pts1 = np.zeros((1,2))
+     pts2 = np.zeros((1,2))
+     for i in range(vision_data.shape[0]):
+         # Collect all point matches between images j-1 and j
+         if vision_data[i, j, 0] >= 0 and vision_data[i, j-1, 0] >= 0:
+            pts1 = np.vstack((pts1, vision_data[i, j-1]))
+            pts2 = np.vstack((pts2, vision_data[i, j]))
+     pts1 = np.delete(pts1, 0, 0)
+     pts2 = np.delete(pts2, 0, 0)
+     pts1 = pts1.astype(float)
+     pts2 = pts2.astype(float)
+     if pts1.shape[0] > 1:
+       E, _ = cv2.findEssentialMat(pts2, pts1, A)
+       _, R, t, _ = cv2.recoverPose(E, pts2, pts1, A)
+       t = s * t
+       rel_pose = np.vstack((np.hstack((R,t)), np.array([0., 0., 0., 1.])))
+     else:
+       print('Found no matches!') 
+       rel_pose = np.identity(4)
+     poses.append(poses[j - 1] @ rel_pose)  
+   
+   # Transform from cam to flu 
+   T_cf = np.array([(0, 0, 1, 0), (-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, 0, 1)])
+   flu_poses = [T_cf @ p for p in poses]
+
+   # Place into gtsam objects
+   # print('Converting poses to gtsam objects...')
+   # gtsam_poses = np.array([gtsam.Pose3(p) for p in flu_poses])
+   # for p in flu_poses:
+      # print(p[:3,1])
+      # R_g = gtsam.Rot3(gtsam.Point3(p[:3,0]), gtsam.Point3(p[:3,1]), gtsam.Point3(p[:3,2]))
+      # print(R_g)
+      # t_g = gtsam.Point3(p[3,:3])
+      # print(t_g)
+      # gtsam_poses.append(gtsam.Pose3(R_g, t_g))
+      
+   return flu_poses
+
+
 if __name__ == '__main__':
     # For testing, use the following command in superpoint-gtsam-vio/src:
     #    python3 main.py --basedir data --date '2011_09_26' --drive '0005' --n_skip 10
@@ -125,13 +173,20 @@ if __name__ == '__main__':
 
     BIAS_COVARIANCE = gtsam.noiseModel.Isotropic.Variance(6, 0.4)
 
+    cv_poses = estimate_poses(vision_data)
+
+#    vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+#    vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+#    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
+#    imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
+#    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+ 
     vio_full = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    vio_full.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
-    vio_full.add_keypoints(vision_data, measured_poses, args.n_skip)
-
-
+    vio_full.add_imu_measurements(cv_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    vio_full.add_keypoints(vision_data, cv_poses, args.n_skip)
     imu_only = vio.VisualInertialOdometryGraph(IMU_PARAMS=IMU_PARAMS, BIAS_COVARIANCE=BIAS_COVARIANCE)
-    imu_only.add_imu_measurements(measured_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+    imu_only.add_imu_measurements(cv_poses, measured_acc, measured_omega, measured_vel, delta_t, args.n_skip)
+
     """
     Add Vision factors
     """
@@ -141,12 +196,15 @@ if __name__ == '__main__':
     """
     Solve factor graph
     """
-    print('==> Solving factor graph')
+    # print('==> Solving factor graph')
 
     params = gtsam.LevenbergMarquardtParams()
-    params.setMaxIterations(100)
+    params.setMaxIterations(1)
+    params.setlambdaUpperBound(1e12)
+    params.setVerbosity('ERROR')
+    print('==> Solving full VIO factor graph')
     result_full = vio_full.estimate(params)
-
+    print('==> Solving IMU factor graph')
     result_imu = imu_only.estimate(params)
 
     """
@@ -160,12 +218,16 @@ if __name__ == '__main__':
     x_gt = measured_poses[:,0,3]
     y_gt = measured_poses[:,1,3]
 
-    
+    """    
     K_np = np.array([[984.244, 0., 690.],[0.,980.814,233.197],[0.,0.,1.]])
     cam_poses_init = vio_full.estimate_poses(vision_data)
     flu_poses_init = vio_full.estimate_flu_poses(cam_poses_init)
     x_init = np.array([pose[0,3] for pose in flu_poses_init]) 
     y_init = np.array([pose[1,3] for pose in flu_poses_init]) 
+    """
+    gtsam_cv_poses = np.array([gtsam.Pose3(p) for p in cv_poses])
+    x_init = np.array([gtsam_cv_poses[k].translation()[0] for k in range(n_frames // args.n_skip)])
+    y_init = np.array([gtsam_cv_poses[k].translation()[1] for k in range(n_frames // args.n_skip)])
 
     x_est_full = np.array([result_full.atPose3(X(k)).translation()[0] for k in range(n_frames//args.n_skip)]) 
     y_est_full = np.array([result_full.atPose3(X(k)).translation()[1] for k in range(n_frames//args.n_skip)]) 
@@ -176,10 +238,9 @@ if __name__ == '__main__':
 
     axs.plot(x_init, y_init, 'o-', color='m', label='INIT')
     axs.plot(x_gt, y_gt, color='k', label='GT')
-    axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO')
+    axs.plot(x_est_full, y_est_full, 'o-', color='b', label='VIO', linestyle='dashed')
     axs.plot(x_est_imu, y_est_imu, 'o-', color='r', label='IMU')
     axs.set_aspect('equal', 'box')
-
     plt.legend()
     plt.show()
 
