@@ -22,3 +22,5 @@ Run Visual-Inertial Odometry for e.g. date 2011_09_26 and drive 0022, skipping e
 #!bash
 $ python src/main.py --basedir /path/to/kitti/raw/data --date 2011_09_26 --drive 0022 --n_skip 10 --n_frames 701
 ```
+
+![VIO vs IMU-only vs Ground Truth](path.eps)
